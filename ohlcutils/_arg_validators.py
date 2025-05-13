@@ -2,7 +2,7 @@
 
 import re
 
-from lightquant.dateutils import market_timings, valid_datetime
+from chameli.dateutils import market_timings, valid_datetime
 
 from .enums import Periodicity
 
