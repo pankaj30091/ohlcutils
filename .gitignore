@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.o
+*.dll
+
+# Virtual environments
+.venv/
+.env
+env/
+
+# Logs
+logs/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+
+# dist
+dist/
+build/
+docs/
+examples/
+ohlcutils.egg-info/
+tests/
+
+# environment
+setup.cfg
+ohlcutils/testing
+ohlcutils/config_prod.yaml

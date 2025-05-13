@@ -1,0 +1,44 @@
+[tool.black]
+line-length = 88
+
+[tool.flake8]
+max-line-length = 88
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["yaml", "pytz","requests"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "pyreadr", "rpy2", "pandas", "scipy"]
+ignore_missing_imports = true
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"ohlcutils" = ["config/config_sample.yaml"]
+
+[project]
+name = "ohlcutils"
+version = "0.1.1"
+description = "A lightweight Python library for python utilities for holidays, dates, options and other tools"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Pankaj Sharma", email = "sharma.pankaj.kumar@gmail.com" }
+]
+dependencies = [
+    "chameli==0.1.2",
+    "pandas-ta==0.3.14b0",
+    ]
+
+[project.urls]
+homepage = "https://bitbucket.org/incurrency/ohlcutils"
+repository = "https://bitbucket.org/incurrency/ohlcutils"

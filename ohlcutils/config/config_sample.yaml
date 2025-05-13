@@ -1,0 +1,6 @@
+folders:
+  basefolder: data # absolute  path needed
+  static_data: static # location with reference to basefolder
+files:
+  splits: splits.rds # filename within static_data
+  symbolchange: symbolchange.rds # filename within static_data
