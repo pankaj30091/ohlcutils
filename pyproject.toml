@@ -27,7 +27,7 @@ include-package-data = true
 
 [project]
 name = "ohlcutils"
-version = "0.1.2"
+version = "0.1.3"
 description = "A lightweight Python library for python utilities for holidays, dates, options and other tools"
 readme = "README.md"
 license = "MIT"
@@ -35,7 +35,7 @@ authors = [
     { name = "Pankaj Sharma", email = "sharma.pankaj.kumar@gmail.com" }
 ]
 dependencies = [
-    "chameli==0.1.2",
+    "chameli",
     "pandas-ta==0.3.14b0",
     ]
 
