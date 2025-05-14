@@ -4,7 +4,7 @@ import sys
 from importlib.resources import files
 from logging.handlers import TimedRotatingFileHandler
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 from .config import is_config_loaded, load_config
 
@@ -115,9 +115,9 @@ class LazyModule:
 
     def _load_module(self):
         allowed_modules = [
-            "lightquant.dateutils",
-            "lightquant.europeanoptions",
-            "lightquant.interactions",
+            "ohlcutils.data",
+            "ohlcutils.indicators",
+            "ohlcutils.enums",
         ]
         if self.module_name not in allowed_modules:
             raise ImportError(f"Module {self.module_name} is not allowed.")
@@ -132,14 +132,14 @@ class LazyModule:
 
 
 # Lazy loading for modules
-dateutils = LazyModule("lightquant.dateutils")
-europeanoptions = LazyModule("lightquant.europeanoptions")
-interactions = LazyModule("lightquant.interactions")
+dateutils = LazyModule("ohlcutils.data")
+europeanoptions = LazyModule("ohlcutils.indicators")
+interactions = LazyModule("ohlcutils.enums")
 
 __all__ = [
-    "dateutils",
-    "europeanoptions",
-    "interactions",
+    "data",
+    "indicators",
+    "enums",
     "initialize_config",
     "configure_logging",
 ]
