@@ -301,8 +301,11 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         out = out[~out.date.duplicated(keep="last")]
 
         # Set index
-        date_aware_local = [pytz.utc.localize(d).astimezone(params["tz"]) for d in out.loc[:, "date"]]
-        out.loc[:, "date"] = date_aware_local
+        out["date"] = pd.to_datetime(out["date"])
+        out["date"] = out["date"].dt.tz_localize("UTC").dt.tz_convert("Asia/Kolkata")
+
+        # date_aware_local = [pytz.utc.localize(d).astimezone(params["tz"]) for d in out.loc[:, "date"]]
+        # out.loc[:, "date"] = pd.DatetimeIndex(date_aware_local).tz_localize(None)
         out = out.set_index("date")
         out.sort_index(inplace=True)
 
@@ -310,8 +313,9 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         if params["fill"] == "ffill":
             if bar_size is not None:
                 out = out.resample(bar_size, label="left").asfreq()
-                out.loc[:, "volume"].fillna(0, inplace=True)
-                out.fillna(method=params["fill"], inplace=True)
+                out.loc[:, "volume"] = out.loc[:, "volume"].fillna(0)
+                out = out.ffill()
+                out = out.infer_objects(copy=False)  # Explicitly infer object dtypes
             # Exclude rows mapping to holidays.
             if any(substring in bar_size for substring in ["T", "S"]):
                 out = out[out.index.dayofweek < 5]
