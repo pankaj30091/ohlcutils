@@ -527,55 +527,42 @@ def change_timeframe(
         else:
             agg_columns[column] = "first"
     agg_columns.update(addl_column_merge_rules)
+    # md.index = md.index.tz_localize("Asia/Kolkata", ambiguous="infer")
+    if "W" in dest_bar_size:
+        weekday_to_pandas_freq = {
+            "Monday": "W-SUN",
+            "Tuesday": "W-MON",
+            "Wednesday": "W-TUE",
+            "Thursday": "W-WED",
+            "Friday": "W-THU",
+            "Saturday": "W-FRI",
+            "Sunday": "W-SAT",
+        }
+        # Dynamically determine the offset from the timezone of md.index
+        weekly_freq = weekly_freq = (
+            f"{dest_bar_size[:1]}{weekday_to_pandas_freq[target_weekday]}"  # e.g., "1W-MON" for Tuesday target
+        )
+        md = md.resample(weekly_freq, label=label).agg(agg_columns).ffill()
+        md.index = md.index + pd.Timedelta(days=1)
+    elif any(freq in dest_bar_size for freq in ["M", "Y"]):
+        md = md.resample(dest_bar_size, label=label).agg(agg_columns).ffill()
+        if label == "left":
+            md.index = md.index + pd.DateOffset(days=1)
+    elif any(freq in dest_bar_size for freq in ["D"]):
+        md = md.resample(dest_bar_size, label=label).agg(agg_columns).ffill()
 
-    # Resample for higher timeframes (daily, weekly, monthly, etc.)
-    if any(barsize in dest_bar_size for barsize in ["D", "W", "M", "Y"]):
-        md = md.resample(dest_bar_size, label=label).agg(agg_columns)
-
-        # Align to target weekday if specified
-        if target_weekday:
-            weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            target_weekday_num = weekdays.index(target_weekday)
-
-            if "W" in dest_bar_size:
-                if label == "left":
-                    md.index = md.index - pd.to_timedelta(md.index.weekday - target_weekday_num, unit="D")
-                    # Re-aggregate the data based on the adjusted index
-                    md = md.resample(dest_bar_size, label="left").agg(agg_columns)
-                elif label == "right":
-                    md.index = md.index + pd.to_timedelta(target_weekday_num - md.index.weekday, unit="D")
-                    md = md.resample(dest_bar_size, label="right").agg(agg_columns)
-
-            # Align for monthly and yearly bars
-            elif "M" in dest_bar_size or "Y" in dest_bar_size:
-                if label == "left":
-                    # Align to the first day of the month/year
-                    md.index = md.index.to_period(dest_bar_size).to_timestamp(how="start")
-                    # Shift the index forward by one period to correctly represent the aggregation period
-                    if "M" in dest_bar_size:
-                        md.index = md.index.map(lambda x: x + pd.offsets.MonthBegin(1))
-                    elif "Y" in dest_bar_size:
-                        md.index = md.index.map(lambda x: x + pd.offsets.YearBegin(1))
-                elif label == "right":
-                    # Align to the last day of the month/year
-                    md.index = md.index.to_period(dest_bar_size).to_timestamp(how="end")
-
-        # Normalize the index to ensure the time part is set to 00:00:00
-        if any(barsize in dest_bar_size for barsize in ["D", "W", "M", "Y"]):
-            md.index = md.index.normalize()
-            # Restore timezone information
-        if md.index.tz is None:
-            md.index = md.index.tz_localize(tz)
     else:
-        # Resample for intraday timeframes
-        offset = pd.Timedelta(bar_start_time_in_min) if label == "left" else None
-        md = md.resample(dest_bar_size, label=label).agg(agg_columns)
+        md = (
+            md.resample(dest_bar_size, offset=pd.Timedelta(bar_start_time_in_min), label=label).agg(agg_columns).ffill()
+        )
 
-        # Apply the offset manually if needed
-        if offset:
-            from pandas.tseries.frequencies import to_offset
+    # Normalize the index to ensure the time part is set to 00:00:00
+    if any(barsize in dest_bar_size for barsize in ["D", "W", "M", "Y"]):
+        md.index = md.index.normalize()
 
-            md.index = md.index + to_offset(bar_start_time_in_min)
+    # Restore timezone information
+    if md.index.tz is None:
+        md.index = md.index.tz_localize(tz)
 
     # Filter out holidays and non-trading hours
     if any(substring in dest_bar_size for substring in ["T", "min", "H", "S"]):
