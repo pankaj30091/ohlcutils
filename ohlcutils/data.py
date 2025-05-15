@@ -17,7 +17,8 @@ from chameli.interactions import readRDS
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
 from .config import get_config
 from .enums import Periodicity
-from .indicators import calculate_beta
+
+pd.set_option("future.no_silent_downcasting", True)
 
 
 def get_dynamic_config():
@@ -314,8 +315,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
             if bar_size is not None:
                 out = out.resample(bar_size, label="left").asfreq()
                 out.loc[:, "volume"] = out.loc[:, "volume"].fillna(0)
-                out = out.ffill()
-                out = out.infer_objects(copy=False)  # Explicitly infer object dtypes
+                out = out.ffill().infer_objects(copy=False)  # Explicitly infer object dtypes
             # Exclude rows mapping to holidays.
             if any(substring in bar_size for substring in ["T", "S"]):
                 out = out[out.index.dayofweek < 5]
@@ -613,160 +613,3 @@ def change_timeframe(
     md[cols] = md[cols].apply(pd.to_numeric, errors="coerce")
 
     return md
-
-
-def calculate_ratio_bars(md, md_benchmark, open_col="aopen", high_col="ahigh", low_col="alow", close_col="asettle"):
-    """
-    Calculate ratio-adjusted OHLC bars for a given market data DataFrame.
-
-    This function adjusts the OHLC (Open, High, Low, Close) prices of a given market data DataFrame
-    based on the ratio of the asset's prices to a benchmark market data DataFrame. The adjustment
-    is done to normalize the asset's prices relative to the benchmark.
-
-    Args:
-        md (pd.DataFrame): Market data DataFrame containing OHLC prices and a 'date' column.
-        md_benchmark (pd.DataFrame): Benchmark market data DataFrame containing OHLC prices and a 'date' column.
-        open_col (str): Column name for the open prices in the market data DataFrame. Default is "aopen".
-        high_col (str): Column name for the high prices in the market data DataFrame. Default is "ahigh".
-        low_col (str): Column name for the low prices in the market data DataFrame. Default is "alow".
-        close_col (str): Column name for the close prices in the market data DataFrame. Default is "asettle".
-
-    Returns:
-        pd.DataFrame: DataFrame containing the ratio-adjusted OHLC prices with columns ["open", "high", "low", "close"].
-
-    Raises:
-        ValueError: If there are no common dates between the market data and the benchmark data.
-    """
-    if "date" in md.columns:
-        md = md.set_index("date").sort_index()
-    else:
-        md = md.sort_index()
-
-    if "date" in md_benchmark.columns:
-        md_benchmark = md_benchmark.set_index("date").sort_index()
-    else:
-        md_benchmark = md_benchmark.sort_index()
-
-    # Convert both indices to the same timezone if needed
-    if md.index.tz is not None and md_benchmark.index.tz is None:
-        md_benchmark.index = md_benchmark.index.tz_localize(md.index.tz)
-    elif md_benchmark.index.tz is not None and md.index.tz is None:
-        md.index = md.index.tz_localize(md_benchmark.index.tz)
-    elif md.index.tz is not None and md.index.tz != md_benchmark.index.tz:
-        md_benchmark.index = md_benchmark.index.tz_convert(md.index.tz)
-
-    md = md.sort_index()
-    md_benchmark = md_benchmark.sort_index()
-
-    # Find the common date range
-    common_dates = md.index.intersection(md_benchmark.index)
-
-    if common_dates.empty:
-        raise ValueError("No common dates between md and md_benchmark")
-
-    # Align data to the common date range
-    md = md.loc[common_dates]
-    md_benchmark = md_benchmark.loc[common_dates]
-
-    # Check for zero values in the first open columns to avoid division by zero
-    if md.iloc[0][open_col] == 0 or md_benchmark.iloc[0][open_col] == 0:
-        raise ValueError("The first open value in md or md_benchmark is zero, cannot calculate ratio bars.")
-
-    # Calculate the scaling factor to make the ratio of the first open values equal to 100
-    scaling_factor = 100 / (md.iloc[0][open_col] / md_benchmark.iloc[0][open_col])
-
-    # Calculate ratio bars
-    ratio_bars = pd.DataFrame(
-        {
-            "open": (md[open_col] / md_benchmark[open_col]) * scaling_factor,
-            "high": (md[high_col] / md_benchmark[high_col]) * scaling_factor,
-            "low": (md[low_col] / md_benchmark[low_col]) * scaling_factor,
-            "close": (md[close_col] / md_benchmark[close_col]) * scaling_factor,
-            "symbol": md["symbol"],
-        },
-        index=md.index,
-    )
-
-    return ratio_bars
-
-
-def calculate_beta_adjusted_bars(
-    md: pd.DataFrame,
-    md_benchmark: pd.DataFrame,
-    beta_calc_days=252,
-    open_col="aopen",
-    high_col="ahigh",
-    low_col="alow",
-    close_col="asettle",
-):
-    """
-    Calculate beta-adjusted OHLC bars for a given market data DataFrame.
-    This function adjusts the OHLC (Open, High, Low, Close) prices of a given market data DataFrame
-    based on the beta of the asset relative to a benchmark market data DataFrame. The adjustment
-    is done to remove the systematic risk component from the asset's returns.
-    Parameters:
-    md (pd.DataFrame): Market data DataFrame containing OHLC prices and a 'date' column.
-    md_benchmark (pd.DataFrame): Benchmark market data DataFrame containing OHLC prices and a 'date' column.
-    open_col (str): Column name for the open prices in the market data DataFrame. Default is "aopen".
-    high_col (str): Column name for the high prices in the market data DataFrame. Default is "ahigh".
-    low_col (str): Column name for the low prices in the market data DataFrame. Default is "alow".
-    close_col (str): Column name for the close prices in the market data DataFrame. Default is "asettle".
-    Returns:
-    pd.DataFrame: DataFrame containing the beta-adjusted OHLC prices with columns ["open", "high", "low", "close"].
-    Raises:
-    ValueError: If there are no common dates between the market data and the benchmark data.
-    """
-
-    if "date" in md.columns:
-        md = md.set_index("date").sort_index()
-    else:
-        md = md.sort_index()
-
-    if "date" in md_benchmark.columns:
-        md_benchmark = md_benchmark.set_index("date").sort_index()
-    else:
-        md_benchmark = md_benchmark.sort_index()
-
-    # Convert both indices to the same timezone if needed
-    if md.index.tz is not None and md_benchmark.index.tz is None:
-        md_benchmark.index = md_benchmark.index.tz_localize(md.index.tz)
-    elif md_benchmark.index.tz is not None and md.index.tz is None:
-        md.index = md.index.tz_localize(md_benchmark.index.tz)
-    elif md.index.tz is not None and md.index.tz != md_benchmark.index.tz:
-        md_benchmark.index = md_benchmark.index.tz_convert(md.index.tz)
-
-    md = md.sort_index()
-    md_benchmark = md_benchmark.sort_index()
-
-    # Find the common date range
-    common_dates = md.index.intersection(md_benchmark.index)
-
-    if common_dates.empty:
-        raise ValueError("No common dates between md and md_benchmark")
-
-    # Align data to the common date range
-    md = md.loc[common_dates]
-    md_benchmark = md_benchmark.loc[common_dates]
-
-    # Compute beta
-    md["beta"] = calculate_beta(md, md_benchmark)
-
-    # Compute log returns
-    md["log_return"] = np.log(md[close_col] / md[close_col].shift(1))
-    md_benchmark["market_log_return"] = np.log(md_benchmark[close_col] / md_benchmark[close_col].shift(1))
-
-    # Compute residual returns: idiosyncratic return
-    md["residual_log_return"] = md["log_return"] - md["beta"] * md_benchmark["market_log_return"]
-
-    # Reconstruct adjusted prices from residual returns
-    md["adj_close"] = md["close"].iloc[0] * np.exp(md["residual_log_return"].cumsum())
-
-    # Adjust OHLC by same ratio as close adjustment
-    adjustment_factor = md["adj_close"] / md[close_col]
-    md["adj_open"] = md[open_col] * adjustment_factor
-    md["adj_high"] = md[high_col] * adjustment_factor
-    md["adj_low"] = md[low_col] * adjustment_factor
-
-    out = md[["adj_open", "adj_high", "adj_low", "adj_close", "residual_log_return", "beta"]].copy()
-    out.columns = ["open", "high", "low", "close", "residual_log_return", "beta"]
-    return out[1:]  # Drop the first row as it contains NaN values

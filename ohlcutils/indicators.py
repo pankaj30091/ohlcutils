@@ -29,6 +29,9 @@ def align_dataframes_on_common_dates(dataframes: List[pd.DataFrame]) -> List[pd.
         elif not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("Date column or datetime index is required.")
 
+    for i, df in enumerate(dataframes):
+        dataframes[i] = df.sort_index()
+
     # Find common dates across all DataFrames
     common_dates = dataframes[0].index
     for df in dataframes[1:]:
@@ -56,10 +59,11 @@ def create_index_if_missing(md):
         md = md.set_index("date")
     elif not isinstance(md.index, pd.DatetimeIndex):
         raise ValueError("Date column or datetime index is required.")
+    md = md.sort_index()
     return md
 
 
-def calculate_beta(md, md_benchmark, col="close", window=252):
+def calculate_beta(md, md_benchmark, columns: dict = {"close": "asettle"}, window=252):
     """Calculate rolling beta using a moving window or all values if window=None.
 
     Args:
@@ -74,10 +78,20 @@ def calculate_beta(md, md_benchmark, col="close", window=252):
     """
     # Align the two DataFrames on common dates
     [md, md_benchmark] = align_dataframes_on_common_dates([md, md_benchmark])
+    required_keys = ["close"]
+    if not all(key in columns for key in required_keys):
+        raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
+
+    # Map the columns
+    close_col = columns["close"]
+
+    # Ensure the mapped columns exist in the DataFrame
+    if not all(col in md.columns for col in [close_col]):
+        raise ValueError("Mapped columns must exist in the DataFrame.")
 
     # Calculate log returns
-    log_ret = np.log(md[col] / md[col].shift(1))
-    log_ret_bench = np.log(md_benchmark[col] / md_benchmark[col].shift(1))
+    log_ret = np.log(md[close_col] / md[close_col].shift(1))
+    log_ret_bench = np.log(md_benchmark[close_col] / md_benchmark[close_col].shift(1))
 
     if window is None:
         # Calculate beta using all values
@@ -91,11 +105,138 @@ def calculate_beta(md, md_benchmark, col="close", window=252):
 
         # Calculate rolling beta
         beta_values = log_ret.rolling(window).corr(log_ret_bench) * (log_ret.rolling(window).std() / std_bench)
-
+        beta_series = beta_values.to_frame(name="beta_series")
         # Return as a DataFrame
-        beta_series = pd.DataFrame(beta_values, index=md.index, columns=["beta_series"])
 
     return beta_series
+
+
+def calculate_ratio_bars(
+    md,
+    md_benchmark,
+    columns: dict = {"open": "aopen", "high": "ahigh", "low": "alow", "close": "asettle"},
+):
+    """
+    Calculate ratio-adjusted OHLC bars for a given market data DataFrame.
+
+    This function adjusts the OHLC (Open, High, Low, Close) prices of a given market data DataFrame
+    based on the ratio of the asset's prices to a benchmark market data DataFrame. The adjustment
+    is done to normalize the asset's prices relative to the benchmark.
+
+    Args:
+        md (pd.DataFrame): Market data DataFrame containing OHLC prices and a 'date' column.
+        md_benchmark (pd.DataFrame): Benchmark market data DataFrame containing OHLC prices and a 'date' column.
+        open_col (str): Column name for the open prices in the market data DataFrame. Default is "aopen".
+        high_col (str): Column name for the high prices in the market data DataFrame. Default is "ahigh".
+        low_col (str): Column name for the low prices in the market data DataFrame. Default is "alow".
+        close_col (str): Column name for the close prices in the market data DataFrame. Default is "asettle".
+
+    Returns:
+        pd.DataFrame: DataFrame containing the ratio-adjusted OHLC prices with columns ["open", "high", "low", "close"].
+
+    Raises:
+        ValueError: If there are no common dates between the market data and the benchmark data.
+    """
+    [md, md_benchmark] = align_dataframes_on_common_dates([md, md_benchmark])
+    required_keys = ["open", "high", "low", "close"]
+    if not all(key in columns for key in required_keys):
+        raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
+
+    # Map the columns
+    open_col = columns["open"]
+    high_col = columns["high"]
+    low_col = columns["low"]
+    close_col = columns["close"]
+
+    # Ensure the mapped columns exist in the DataFrame
+    if not all(col in md.columns for col in [open_col, high_col, low_col, close_col]):
+        raise ValueError("Mapped columns must exist in the DataFrame.")
+
+    # Check for zero values in the first open columns to avoid division by zero
+    if md.iloc[0][open_col] == 0 or md_benchmark.iloc[0][open_col] == 0:
+        raise ValueError("The first open value in md or md_benchmark is zero, cannot calculate ratio bars.")
+
+    # Calculate the scaling factor to make the ratio of the first open values equal to 100
+    scaling_factor = 100 / (md.iloc[0][open_col] / md_benchmark.iloc[0][open_col])
+
+    # Calculate ratio bars
+    ratio_bars = pd.DataFrame(
+        {
+            "ratio_adj_open": (md[open_col] / md_benchmark[open_col]) * scaling_factor,
+            "ratio_adj_high": (md[high_col] / md_benchmark[high_col]) * scaling_factor,
+            "ratio_adj_low": (md[low_col] / md_benchmark[low_col]) * scaling_factor,
+            "ratio_adj_close": (md[close_col] / md_benchmark[close_col]) * scaling_factor,
+            "symbol": md["symbol"],
+        },
+        index=md.index,
+    )
+
+    return ratio_bars
+
+
+def calculate_beta_adjusted_bars(
+    md: pd.DataFrame,
+    md_benchmark: pd.DataFrame,
+    beta_days=252,
+    columns: dict = {"open": "aopen", "high": "ahigh", "low": "alow", "close": "asettle"},
+):
+    """
+    Calculate beta-adjusted OHLC bars for a given market data DataFrame.
+    This function adjusts the OHLC (Open, High, Low, Close) prices of a given market data DataFrame
+    based on the beta of the asset relative to a benchmark market data DataFrame. The adjustment
+    is done to remove the systematic risk component from the asset's returns.
+    Parameters:
+    md (pd.DataFrame): Market data DataFrame containing OHLC prices and a 'date' column.
+    md_benchmark (pd.DataFrame): Benchmark market data DataFrame containing OHLC prices and a 'date' column.
+    open_col (str): Column name for the open prices in the market data DataFrame. Default is "aopen".
+    high_col (str): Column name for the high prices in the market data DataFrame. Default is "ahigh".
+    low_col (str): Column name for the low prices in the market data DataFrame. Default is "alow".
+    close_col (str): Column name for the close prices in the market data DataFrame. Default is "asettle".
+    Returns:
+    pd.DataFrame: DataFrame containing the beta-adjusted OHLC prices with columns ["open", "high", "low", "close"].
+    Raises:
+    ValueError: If there are no common dates between the market data and the benchmark data.
+    """
+    [md, md_benchmark] = align_dataframes_on_common_dates([md, md_benchmark])
+    required_keys = ["open", "high", "low", "close"]
+    if not all(key in columns for key in required_keys):
+        raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
+
+    # Map the columns
+    open_col = columns["open"]
+    high_col = columns["high"]
+    low_col = columns["low"]
+    close_col = columns["close"]
+
+    # Ensure the mapped columns exist in the DataFrame
+    if not all(col in md.columns for col in [open_col, high_col, low_col, close_col]):
+        raise ValueError("Mapped columns must exist in the DataFrame.")
+
+    # Check for zero values in the first open columns to avoid division by zero
+    if md.iloc[0][open_col] == 0 or md_benchmark.iloc[0][open_col] == 0:
+        raise ValueError("The first open value in md or md_benchmark is zero, cannot calculate ratio bars.")
+
+    # Compute beta
+    md["beta"] = calculate_beta(md, md_benchmark, window=beta_days, columns=columns)
+
+    # Compute log returns
+    md["log_return"] = np.log(md[close_col] / md[close_col].shift(1))
+    md_benchmark["market_log_return"] = np.log(md_benchmark[close_col] / md_benchmark[close_col].shift(1))
+
+    # Compute residual returns: idiosyncratic return
+    md["residual_log_return"] = md["log_return"] - md["beta"] * md_benchmark["market_log_return"]
+
+    # Reconstruct adjusted prices from residual returns
+    md["beta_adj_close"] = md[close_col].iloc[0] * np.exp(md["residual_log_return"].cumsum())
+
+    # Adjust OHLC by same ratio as close adjustment
+    adjustment_factor = md["beta_adj_close"] / md[close_col]
+    md["beta_adj_open"] = md[open_col] * adjustment_factor
+    md["beta_adj_high"] = md[high_col] * adjustment_factor
+    md["beta_adj_low"] = md[low_col] * adjustment_factor
+
+    out = md[["beta_adj_open", "beta_adj_high", "beta_adj_low", "beta_adj_close", "residual_log_return", "beta"]].copy()
+    return out
 
 
 def get_heikin_ashi(md, len2_ha=10):
@@ -108,8 +249,9 @@ def get_heikin_ashi(md, len2_ha=10):
     Returns:
         _type_: _description_
     """
-    ha_df = create_index_if_missing(md)
+    md = create_index_if_missing(md)
     # Calculate Heikin-Ashi values
+    ha_df = pd.DataFrame(index=md.index)
     ha_df["close"] = (md["open"] + md["high"] + md["low"] + md["close"]) / 4
     # Calculate ha_df['open'] recursively
     ha_df["open"] = md["open"].copy()  # Start with the original open values
@@ -124,13 +266,14 @@ def get_heikin_ashi(md, len2_ha=10):
     ha_df["c2"] = ha_df["close"].ewm(span=len2_ha, adjust=False).mean()
     ha_df["h2"] = ha_df["high"].ewm(span=len2_ha, adjust=False).mean()
     ha_df["l2"] = ha_df["low"].ewm(span=len2_ha, adjust=False).mean()
+
     return ha_df
 
 
 def degree_slope(
     md: pd.DataFrame,
     window: int,
-    columns: list,
+    columns: list = ["asettle"],
     prefix: str = "deg",
     method: str = "simple",
 ) -> pd.DataFrame:
@@ -182,7 +325,10 @@ def degree_slope(
 
 
 def average_band(
-    md: pd.DataFrame, size: int = 100, ema: int = 9, columns: dict = {"high": "high", "low": "low", "close": "close"}
+    md: pd.DataFrame,
+    size: int = 100,
+    ema: int = 9,
+    columns: dict = {"high": "ahigh", "low": "alow", "close": "asettle"},
 ) -> pd.DataFrame:
     """
     Returns the average band, Bollinger Bands, highest high, lowest low, and displacement around the average band,
@@ -306,7 +452,7 @@ def shift(source: np.array, signal: np.array, ref: int):
     return out
 
 
-def trend(md, bars=1, columns: dict = {"high": "high", "low": "low"}) -> pd.DataFrame:
+def trend(md, bars=1, columns: dict = {"high": "ahigh", "low": "low"}) -> pd.DataFrame:
     """
     Calculate the trend and swing levels for a given OHLC (Open-High-Low-Close) dataset.
     This function identifies trends, swing highs, swing lows, and other related metrics
@@ -413,17 +559,17 @@ def trend(md, bars=1, columns: dict = {"high": "high", "low": "low"}) -> pd.Data
             swingtype[i] = 1
             if updownbar[i - 1] == 1:  # continued upswing
                 daysinswing[i] = daysinswing[i - 1] + 1
-                swinghigh[i] = high[i] if high[i] > swinghigh[i - 1] else swinghigh[i - 1]
+                swinghigh[i] = high.iloc[i] if high.iloc[i] > swinghigh[i - 1] else swinghigh[i - 1]
                 if swinglow[i - 1] != 0 and outsidebar[i] != 1:
                     swinglow[i] = swinglow[i - 1]
                     swingll[i] = swinglow[i - 1]
             else:  # first day of upswing
                 daysinswing[i] = 1
                 swingHighStartIndex = i
-                swinghigh[i] = high[i]
+                swinghigh[i] = high.iloc[i]
                 # start of new swing. Free prior swing levels
                 if outsidebar[i] == 1:
-                    swinglow[i] = min(low[i], swinglow[i - 1])
+                    swinglow[i] = min(low.iloc[i], swinglow[i - 1])
                     swingll[i] = swinglow[i]
                 else:
                     swinglow[i] = swinglow[i - 1]
@@ -435,16 +581,16 @@ def trend(md, bars=1, columns: dict = {"high": "high", "low": "low"}) -> pd.Data
             swingtype[i] = -1
             if updownbar[i - 1] == -1:  # continued downswing
                 daysinswing[i] = daysinswing[i - 1] + 1
-                swinglow[i] = min(low[i], swinglow[i - 1])
+                swinglow[i] = min(low.iloc[i], swinglow[i - 1])
                 if swinghigh[i - 1] != 0 and outsidebar[i] != 1:
                     swinghigh[i] = swinghigh[i - 1]
                     swinghh[i] = swinghigh[i - 1]
             else:  # first day of dnswing
                 daysinswing[i] = 1
                 swingLowStartIndex = i
-                swinglow[i] = low[i]
+                swinglow[i] = low.iloc[i]
                 if outsidebar[i] == 1:
-                    swinghigh[i] = max(high[i], swinghigh[i - 1])
+                    swinghigh[i] = max(high.iloc[i], swinghigh[i - 1])
                     swinghh[i] = swinghigh[i]
                 else:
                     swinghigh[i] = swinghigh[i - 1]
@@ -486,7 +632,7 @@ def trend(md, bars=1, columns: dict = {"high": "high", "low": "low"}) -> pd.Data
             and swinghigh[i] > swinghh_1[i]
             and swingll_1[i] > swingll_2[i]
             and swinglow[i] > swingll_1[i]
-            and low[i] > swingll_1[i]
+            and low.iloc[i] > swingll_1[i]
         )
         down1 = (updownbar[i] == -1) and swinghigh[i] < swinghh_1[i] and swinglow[i] < swingll_1[i]
         down2 = (updownbar[i] == -1) and swinghigh[i] < swinghh_1[i] and swingll_1[i] < swingll_2[i]
@@ -495,7 +641,7 @@ def trend(md, bars=1, columns: dict = {"high": "high", "low": "low"}) -> pd.Data
             and swinghh_1[i] < swinghh_2[i]
             and swinglow[i] < swingll_1[i]
             and swinghigh[i] < swinghh_1[i]
-            and high[i] < swinghh_1[i]
+            and high.iloc[i] < swinghh_1[i]
         )
 
         if up1 or up2 or up3:
@@ -566,7 +712,7 @@ def range_filter(
             the required keys or if the mapped columns do not exist in the
             input DataFrame.
     Notes:
-        - The function uses the `ta.EMA` method for calculating the exponential
+        - The function uses the `ta.ema` method for calculating the exponential
           moving average. Ensure the required library is imported and available.
         - The input DataFrame is expected to have a proper index. If missing,
           an index will be created using the `create_index_if_missing` function.
@@ -587,33 +733,35 @@ def range_filter(
     close = md.loc[:, close_col]
 
     wper = 2 * per - 1
-    avgrng = ta.EMA(abs(close - close.shift(1).bfill()), per).bfill()
-    smoothrng = ta.EMA(avgrng, timeperiod=wper).fillna(0) * mult
-    rngfilt = close
+    avgrng = ta.ema(abs(close - close.shift(1).bfill()), per).bfill()
+    smoothrng = ta.ema(avgrng, timeperiod=wper).fillna(0) * mult
+    rngfilt = close.copy()  # Create a copy to avoid modifying a slice
     for i in range(2, len(rngfilt)):
-        if close[i] > rngfilt[i - 1]:  # upward market
-            if (close[i] - smoothrng[i]) < rngfilt[i - 1]:  # close is within the smoothing range of rangefilter.
-                rngfilt[i] = rngfilt[i - 1]  # dont adjust rangefilter
+        if close.iloc[i] > rngfilt.iloc[i - 1]:  # upward market
+            if (close.iloc[i] - smoothrng.iloc[i]) < rngfilt.iloc[
+                i - 1
+            ]:  # close is within the smoothing range of rangefilter.
+                rngfilt.iloc[i] = rngfilt.iloc[i - 1]  # dont adjust rangefilter
             else:
-                rngfilt[i] = close[i] - smoothrng[i]  # set rangefilter to new, higher value
+                rngfilt.iloc[i] = close.iloc[i] - smoothrng.iloc[i]  # set rangefilter to new, higher value
         else:
-            if (close[i] + smoothrng[i]) > rngfilt[i - 1]:
+            if (close.iloc[i] + smoothrng.iloc[i]) > rngfilt.iloc[i - 1]:
                 rngfilt.iloc[i] = rngfilt.iloc[i - 1]
             else:
-                rngfilt[i] = close[i] + smoothrng[i]
+                rngfilt.iloc[i] = close.iloc[i] + smoothrng.iloc[i]
     upward = np.zeros(len(rngfilt))
     downward = np.zeros(len(rngfilt))
     for i in range(2, len(rngfilt)):
-        if rngfilt[i] > rngfilt[i - 1]:
+        if rngfilt.iloc[i] > rngfilt.iloc[i - 1]:
             upward[i] = upward[i - 1] + 1
-        elif rngfilt[i] < rngfilt[i - 1]:
+        elif rngfilt.iloc[i] < rngfilt.iloc[i - 1]:
             upward[i] = 0
         else:
             upward[i] = upward[i - 1]
 
-    if rngfilt[i] < rngfilt[i - 1]:
+    if rngfilt.iloc[i] < rngfilt.iloc[i - 1]:
         downward[i] = downward[i - 1] + 1
-    elif rngfilt[i] > rngfilt[i - 1]:
+    elif rngfilt.iloc[i] > rngfilt.iloc[i - 1]:
         downward[i] = 0
     else:
         downward[i] = downward[i - 1]
@@ -624,7 +772,7 @@ def range_filter(
             "highrange": rngfilt + smoothrng,
             "lowrange": rngfilt - smoothrng,
             "upward": upward,
-            "downard": downward,
+            "downward": downward,
         },
         index=md.index,
     )
@@ -635,7 +783,7 @@ def t3ma(
     md: pd.DataFrame,
     len: int = 5,
     volume_factor: float = 0.7,
-    columns: dict = {"close": "close"},
+    columns: dict = {"close": "asettle"},
 ) -> pd.DataFrame:
     """
     Calculates the Tilson T3 moving average for the specified column(s) in the DataFrame.
@@ -669,12 +817,12 @@ def t3ma(
     src = md[close_col]
 
     # Calculate the T3 moving average
-    xe1 = ta.EMA(src, len)
-    xe2 = ta.EMA(xe1, len)
-    xe3 = ta.EMA(xe2, len)
-    xe4 = ta.EMA(xe3, len)
-    xe5 = ta.EMA(xe4, len)
-    xe6 = ta.EMA(xe5, len)
+    xe1 = ta.ema(src, len)
+    xe2 = ta.ema(xe1, len)
+    xe3 = ta.ema(xe2, len)
+    xe4 = ta.ema(xe3, len)
+    xe5 = ta.ema(xe4, len)
+    xe6 = ta.ema(xe5, len)
 
     b = volume_factor
     c1 = -b * b * b
@@ -695,7 +843,7 @@ def bextrender(
     rsi_period: int = 15,
     t3_ma_len: int = 5,
     t3_ma_volume_factor: float = 0.7,
-    columns: dict = {"close": "close"},
+    columns: dict = {"close": "asettle"},
 ) -> pd.DataFrame:
     """
     Calculates B-Xtrender values for the given market data.
@@ -704,7 +852,7 @@ def bextrender(
         md (pd.DataFrame): Market data DataFrame.
         short_period (int, optional): Short period for EMA. Defaults to 5.
         long_period (int, optional): Long period for EMA. Defaults to 20.
-        rsi_period (int, optional): Period for RSI. Defaults to 15.
+        rsi_period (int, optional): Period for rsi. Defaults to 15.
         t3_ma_len (int, optional): Period for Tilson T3 Moving Average. Defaults to 5.
         t3_ma_volume_factor (float, optional): Volume Factor for Tilson T3 moving average. Normally 0.7 or 0.618. Defaults to 0.7.
         columns (dict, optional): Mapping of column names in `md` to the ones used in the function.
@@ -748,8 +896,8 @@ def bextrender(
         )
 
     # Calculate short-term and long-term Xtrender
-    shortTermXtrender = ta.RSI(ta.EMA(src, short_period) - ta.EMA(src, long_period), rsi_period) - 50
-    longTermXtrender = ta.RSI(ta.EMA(src, long_period), rsi_period) - 50
+    shortTermXtrender = ta.rsi(ta.ema(src, short_period) - ta.ema(src, long_period), rsi_period) - 50
+    longTermXtrender = ta.rsi(ta.ema(src, long_period), rsi_period) - 50
 
     # Calculate T3 moving averages for short-term and long-term Xtrender
     shortT3MA = t3ma(
@@ -781,7 +929,7 @@ def bextrender(
 def vwap(
     md: pd.DataFrame,
     periods: int = 21,
-    columns: dict = {"price": "close", "volume": "volume"},
+    columns: dict = {"close": "asettle", "volume": "avolume"},
 ) -> pd.DataFrame:
     """
     Calculates the Volume Weighted Average Price (VWAP) for the given market data.
@@ -796,23 +944,23 @@ def vwap(
         pd.DataFrame: DataFrame with the calculated VWAP as a new column.
     """
     # Ensure the required columns are present in the DataFrame
-    required_keys = ["price", "volume"]
+    required_keys = ["close", "volume"]
     if not all(key in columns for key in required_keys):
         raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
 
     # Map the columns
-    price_col = columns["price"]
+    close_col = columns["close"]
     volume_col = columns["volume"]
 
     # Ensure the mapped columns exist in the DataFrame
-    if not all(col in md.columns for col in [price_col, volume_col]):
+    if not all(col in md.columns for col in [close_col, volume_col]):
         raise ValueError("Mapped columns must exist in the DataFrame.")
 
     # Ensure the DataFrame has a datetime index
     md = create_index_if_missing(md)
 
     # Extract the source columns
-    src_price = md[price_col]
+    src_price = md[close_col]
     src_volume = md[volume_col]
 
     # Calculate VWAP
@@ -823,7 +971,7 @@ def vwap(
     )
 
     # Return the result as a DataFrame
-    return pd.DataFrame({f"vwap_{price_col}": vwap_data}, index=md.index)
+    return pd.DataFrame({f"vwap_{close_col}": vwap_data}, index=md.index)
 
 
 def calc_rolling(x: pd.Series, periods: int, indicator: Callable, column_name: str = "rolling") -> pd.DataFrame:
@@ -864,7 +1012,7 @@ def hilega_milega(
     rsi_days: int = 9,
     ma_days: int = 21,
     ema_days: int = 3,
-    columns: dict = {"price": "close"},
+    columns: dict = {"close": "asettle"},
 ) -> pd.DataFrame:
     """
     Calculates the Hilega-Milega indicator based on RSI, EMA, and WMA.
@@ -875,7 +1023,7 @@ def hilega_milega(
         ma_days (int, optional): Period for WMA calculation. Defaults to 21.
         ema_days (int, optional): Period for EMA calculation. Defaults to 3.
         columns (dict, optional): Mapping of column names in `md` to the ones used in the function.
-                                  Defaults to {"price": "close"}.
+                                  Defaults to {"close": "asettle"}.
 
     Returns:
         pd.DataFrame: DataFrame with the calculated Hilega-Milega indicator and its components:
@@ -885,22 +1033,22 @@ def hilega_milega(
                       - "wma": The WMA of RSI values.
     """
     # Ensure the required columns are present in the DataFrame
-    required_keys = ["price"]
+    required_keys = ["close"]
     if not all(key in columns for key in required_keys):
         raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
 
     # Map the columns
-    price_col = columns["price"]
+    close_col = columns["close"]
 
     # Ensure the mapped columns exist in the DataFrame
-    if price_col not in md.columns:
-        raise ValueError(f"The column '{price_col}' specified in `columns` does not exist in the DataFrame.")
+    if close_col not in md.columns:
+        raise ValueError(f"The column '{close_col}' specified in `columns` does not exist in the DataFrame.")
 
     # Ensure the DataFrame has a datetime index
     md = create_index_if_missing(md)
 
     # Extract the source column
-    src_price = md[price_col]
+    src_price = md[close_col]
 
     # Calculate RSI, EMA, and WMA
     rsi = ta.rsi(src_price, length=rsi_days)
@@ -926,7 +1074,7 @@ def supertrend(
     md: pd.DataFrame,
     atr_period: int = 14,
     multiplier: float = 3.0,
-    columns: dict = {"high": "high", "low": "low", "close": "close"},
+    columns: dict = {"high": "ahigh", "low": "alow", "close": "asettle"},
 ) -> pd.DataFrame:
     """
     Calculates the Supertrend indicator for the given market data.
@@ -985,22 +1133,22 @@ def supertrend(
 
     # Calculate Supertrend
     for i in range(1, len(md)):
-        if close[i] > final_upperband[i - 1]:
+        if close.iloc[i] > final_upperband.iloc[i - 1]:
             supertrend[i] = True
-        elif close[i] < final_lowerband[i - 1]:
+        elif close.iloc[i] < final_lowerband.iloc[i - 1]:
             supertrend[i] = False
         else:
             supertrend[i] = supertrend[i - 1]
-            if supertrend[i] and final_lowerband[i] < final_lowerband[i - 1]:
-                final_lowerband[i] = final_lowerband[i - 1]
-            if not supertrend[i] and final_upperband[i] > final_upperband[i - 1]:
-                final_upperband[i] = final_upperband[i - 1]
+            if supertrend[i] and final_lowerband.iloc[i] < final_lowerband.iloc[i - 1]:
+                final_lowerband.iloc[i] = final_lowerband.iloc[i - 1]
+            if not supertrend[i] and final_upperband.iloc[i] > final_upperband.iloc[i - 1]:
+                final_upperband.iloc[i] = final_upperband.iloc[i - 1]
 
         # Remove bands based on trend direction
         if supertrend[i]:
-            final_upperband[i] = np.nan
+            final_upperband.iloc[i] = np.nan
         else:
-            final_lowerband[i] = np.nan
+            final_lowerband.iloc[i] = np.nan
 
     # Return the result as a DataFrame
     return pd.DataFrame(
@@ -1054,11 +1202,19 @@ def calc_sr(
 
     # Helper functions
     def is_support(i):
-        return low[i] < low[i - 1] and low[i] < low[i + 1] and low[i + 1] < low[i + 2] and low[i - 1] < low[i - 2]
+        return (
+            low.iloc[i] < low.iloc[i - 1]
+            and low.iloc[i] < low.iloc[i + 1]
+            and low.iloc[i + 1] < low.iloc[i + 2]
+            and low.iloc[i - 1] < low.iloc[i - 2]
+        )
 
     def is_resistance(i):
         return (
-            high[i] > high[i - 1] and high[i] > high[i + 1] and high[i + 1] > high[i + 2] and high[i - 1] > high[i - 2]
+            high.iloc[i] > high.iloc[i - 1]
+            and high.iloc[i] > high.iloc[i + 1]
+            and high.iloc[i + 1] > high.iloc[i + 2]
+            and high.iloc[i - 1] > high.iloc[i - 2]
         )
 
     def is_far_from_level(level):
@@ -1077,7 +1233,7 @@ def calc_sr(
     # Identify support and resistance levels
     for i in range(2, len(md) - 2):
         if is_support(i):
-            level = low[i]
+            level = low.iloc[i]
             if is_far_from_level(level):
                 levels.append({"timestamp": md.index[i], "level": level, "type": "support", "tests": 0})
                 support[i] = level
@@ -1090,7 +1246,7 @@ def calc_sr(
                         break
 
         if is_resistance(i):
-            level = high[i]
+            level = high.iloc[i]
             if is_far_from_level(level):
                 levels.append({"timestamp": md.index[i], "level": level, "type": "resistance", "tests": 0})
                 resistance[i] = level
@@ -1117,7 +1273,7 @@ def calc_sr(
 def srt(
     md: pd.DataFrame,
     days: int = 124,
-    columns: dict = {"price": "close"},
+    columns: dict = {"close": "asettle"},
 ) -> pd.DataFrame:
     """
     Calculates the SRT (Strength Ratio Trend) indicator, which is the ratio of the current price
@@ -1127,32 +1283,32 @@ def srt(
         md (pd.DataFrame): Market data DataFrame.
         days (int, optional): Days for the moving average. Defaults to 124.
         columns (dict, optional): Mapping of column names in `md` to the ones used in the function.
-                                  Defaults to {"price": "close"}.
+                                  Defaults to {"close": "asettle"}.
 
     Returns:
         pd.DataFrame: DataFrame with the calculated SRT indicator as a new column.
     """
     # Ensure the required columns are present in the DataFrame
-    required_keys = ["price"]
+    required_keys = ["close"]
     if not all(key in columns for key in required_keys):
         raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
 
     # Map the columns
-    price_col = columns["price"]
+    close_col = columns["close"]
 
     # Ensure the mapped columns exist in the DataFrame
-    if price_col not in md.columns:
-        raise ValueError(f"The column '{price_col}' specified in `columns` does not exist in the DataFrame.")
+    if close_col not in md.columns:
+        raise ValueError(f"The column '{close_col}' specified in `columns` does not exist in the DataFrame.")
 
     # Ensure the DataFrame has a datetime index
     md = create_index_if_missing(md)
 
     # Extract the source column
-    src_price = md[price_col]
+    src_price = md[close_col]
 
     # Calculate the SRT indicator
     sma = ta.sma(src_price, length=days)
     srt_indicator = src_price / sma
 
     # Return the result as a DataFrame
-    return pd.DataFrame({f"srt_{price_col}": srt_indicator}, index=md.index)
+    return pd.DataFrame({f"srt_{close_col}": srt_indicator}, index=md.index)
