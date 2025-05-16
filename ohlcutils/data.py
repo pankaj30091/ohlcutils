@@ -216,7 +216,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         return out
 
     if params["dest_bar_size"] is not None:
-        if not any(bs in params["dest_bar_size"] for bs in ["D", "M", "W", "Y", "T", "S"]):
+        if not any(bs in params["dest_bar_size"] for bs in ["D", "ME", "W", "Y", "T", "S"]):
             return out
 
     # Generate start_time and end_time if not provided
@@ -487,7 +487,7 @@ def change_timeframe(
         return md
 
     # Validate `dest_bar_size`
-    valid_frequencies = ["S", "T", "min", "H", "D", "W", "M", "Y"]
+    valid_frequencies = ["S", "T", "min", "H", "D", "W", "ME", "Y"]
     if not any(freq in dest_bar_size for freq in valid_frequencies):
         raise ValueError(f"Invalid `dest_bar_size`: {dest_bar_size}")
 
@@ -544,7 +544,7 @@ def change_timeframe(
         )
         md = md.resample(weekly_freq, label=label).agg(agg_columns).ffill()
         md.index = md.index + pd.Timedelta(days=1)
-    elif any(freq in dest_bar_size for freq in ["M", "Y"]):
+    elif any(freq in dest_bar_size for freq in ["ME", "Y"]):
         md = md.resample(dest_bar_size, label=label).agg(agg_columns).ffill()
         if label == "left":
             md.index = md.index + pd.DateOffset(days=1)
@@ -557,7 +557,7 @@ def change_timeframe(
         )
 
     # Normalize the index to ensure the time part is set to 00:00:00
-    if any(barsize in dest_bar_size for barsize in ["D", "W", "M", "Y"]):
+    if any(barsize in dest_bar_size for barsize in ["D", "W", "ME", "Y"]):
         md.index = md.index.normalize()
 
     # Restore timezone information
@@ -578,7 +578,7 @@ def change_timeframe(
         ]  # Exclude holidays
 
     # Adjust for holidays if required
-    if adjust_for_holidays and any(barsize in dest_bar_size for barsize in ["D", "W", "M", "Y"]):
+    if adjust_for_holidays and any(barsize in dest_bar_size for barsize in ["D", "W", "ME", "Y"]):
         md.index = pd.to_datetime(md.index)
         md.index = md.index.map(
             lambda d: (
