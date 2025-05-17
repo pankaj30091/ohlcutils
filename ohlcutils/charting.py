@@ -3,8 +3,6 @@ import plotly.graph_objects as go
 import plotly.io as pio
 
 pio.renderers.default = "notebook"
-# Sample OHLC data (or load your own CSV with similar columns)
-# Replace with your file or DataFrame
 
 
 def plot(
@@ -146,7 +144,14 @@ def plot(
 
     # Update layout for multiple y-axes
     layout_yaxes = {
-        "yaxis": dict(title="Price", side="left"),
+        "yaxis": dict(
+            title="Price",
+            side="left",
+            showspikes=True,  # Enable horizontal spikeline
+            spikemode="across",  # Spikeline across all subplots
+            spikesnap="cursor",  # Snap spikeline to cursor
+            spikethickness=1,
+        ),
     }
     for j in range(2, yaxis_count + 1):
         layout_yaxes[f"yaxis{j}"] = dict(
@@ -154,23 +159,31 @@ def plot(
             overlaying="y",
             side="right" if j % 2 == 0 else "left",
             showgrid=False,
+            showspikes=True,  # Enable horizontal spikeline for additional y-axes
+            spikemode="across",
+            spikesnap="cursor",
+            spikethickness=1,
         )
         if j > 2:  # For additional axes beyond the first overlay
             layout_yaxes[f"yaxis{j}"]["anchor"] = "free"
             layout_yaxes[f"yaxis{j}"]["position"] = (j - 2) / (yaxis_count + 1)  # Normalize position to [0, 1]
 
     fig.update_layout(
-        title=f"{title} - {symbol}",
+        title=f"{title}{symbol}",
         xaxis=dict(
             type="category",
             tickvals=x_tickvals,
             ticktext=x_ticktext,
             tickangle=-90,  # Rotate x-axis labels vertically
             rangeslider=dict(visible=False),
+            showspikes=True,  # Enable vertical spikeline
+            spikemode="across",  # Spikeline across all subplots
+            spikesnap="cursor",  # Snap spikeline to cursor
+            spikethickness=1,
         ),
-        hovermode="x unified",  # Unified tooltips
+        hovermode="x unified",  # Unified tooltips with crosshair
         height=600,
-        **layout_yaxes,
+        **layout_yaxes,  # Use layout_yaxes to define all y-axes
     )
 
     fig.show()
