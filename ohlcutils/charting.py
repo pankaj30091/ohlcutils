@@ -74,7 +74,7 @@ def plot(
                     go.Scatter(
                         x=main_df.index,
                         y=main_df[column_name],
-                        name=f"Indicator - {column_name}",
+                        name=f"{column_name}",
                         mode="lines",
                         yaxis=yaxis,
                     )
@@ -119,7 +119,7 @@ def plot(
                 go.Scatter(
                     x=df.index,
                     y=df[col],
-                    name=f"DataFrame {i} - {col}",
+                    name=f"{col}",
                     yaxis=yaxis,
                     mode="lines",
                 )
