@@ -548,8 +548,49 @@ def change_timeframe(
         md = md.resample(dest_bar_size, label=label).agg(agg_columns).ffill()
         if label == "left":
             md.index = md.index + pd.DateOffset(days=1)
-    elif any(freq in dest_bar_size for freq in ["D"]):
-        md = md.resample(dest_bar_size, label=label).agg(agg_columns).ffill()
+    elif any(freq in dest_bar_size for freq in ["D"]):  # Handle arbitrary business day-based sampling
+        # Extract the number of business days from dest_bar_size (e.g., "5D" -> 5)
+        period_length = int(dest_bar_size.replace("D", ""))
+
+        # Define a custom business day frequency that excludes weekends and holidays
+        business_days = pd.offsets.CustomBusinessDay(holidays=holidays.get(exchange, []))
+
+        # Generate snapshot dates with exactly `period_length` business days between them
+        snapshot_dates = pd.date_range(start=md.index[0], end=md.index[-1], freq=business_days * period_length)
+
+        # Ensure the last day in md.index is included in the snapshot dates
+        if md.index[-1] not in snapshot_dates:
+            snapshot_dates = snapshot_dates.append(pd.DatetimeIndex([md.index[-1]]))
+
+        # Ensure the interval includes the next day after md.index[-1]
+        if dest_bar_size == "1D":
+            snapshot_dates = snapshot_dates.append(pd.DatetimeIndex([md.index[-1] + pd.Timedelta(days=1)]))
+
+        snapshot_dates = pd.to_datetime(snapshot_dates)
+        snapshot_dates = snapshot_dates.sort_values()
+
+        # Create intervals
+        intervals = pd.IntervalIndex.from_breaks(snapshot_dates, closed="left")
+
+        # Assign interval label to each row
+        md["interval"] = pd.cut(md.index, bins=intervals)
+
+        # Group by interval and aggregate
+        aggregated = md.groupby("interval", observed=False).agg(agg_columns)
+
+        # Assign a representative timestamp to each interval based on the label
+        if not aggregated.empty and aggregated.index is not None:  # Ensure the DataFrame is not empty and has an index
+            if label == "left":
+                aggregated.index = [interval.left for interval in aggregated.index]
+            elif label == "right":
+                aggregated.index = [interval.right for interval in aggregated.index]
+            else:
+                raise ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'.")
+            aggregated.index.name = "date"  # Safely assign the name to the index
+
+        md = aggregated.copy()
+        # Normalize the index to ensure the time part is set to 00:00:00
+        md.index = md.index.normalize()
 
     else:
         md = (
@@ -572,12 +613,10 @@ def change_timeframe(
         ]  # Exclude holidays
         md = md.between_time(market_open_time, market_close_time)  # Exclude non-trading hours
     elif "D" in dest_bar_size:
-        md = md[md.index.dayofweek < 5]  # Exclude weekends
         md = md[
             ~md.index.normalize().isin(pd.to_datetime(holidays.get(exchange, [])).tz_localize(tz))
         ]  # Exclude holidays
 
-    # Adjust for holidays if required
     if adjust_for_holidays and any(barsize in dest_bar_size for barsize in ["D", "W", "ME", "Y"]):
         md.index = pd.to_datetime(md.index)
         md.index = md.index.map(

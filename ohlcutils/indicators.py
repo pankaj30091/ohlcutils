@@ -480,8 +480,10 @@ def trend(md, bars=1, columns: dict = {"high": "ahigh", "low": "low"}) -> pd.Dat
             - "insidebar": Indicates if the bar is an inside bar (1 for true, 0 otherwise).
             - "swinghigh": The swing high value for the current bar.
             - "swinglow": The swing low value for the current bar.
-            - "swinghh": The highest swing high value up to the current bar.
-            - "swingll": The lowest swing low value up to the current bar.
+            - "swinghh": The highest swing value in the prior upswing. final set after new downswing starts
+            - "swingll": The lowest swing value in the prior downswing. finat set after new upswing starts
+            - "swinghh_1": prior swinghh value which waa different
+            - "swingll_1": prior swingll value which waa different
     Raises:
         ValueError:
             - If the `columns` dictionary does not include mappings for "high", "low", and "close".
@@ -673,6 +675,8 @@ def trend(md, bars=1, columns: dict = {"high": "ahigh", "low": "low"}) -> pd.Dat
             "swinglow": swinglow,
             "swinghh": swinghh,
             "swingll": swingll,
+            "swinghh_1": swinghh_1,
+            "swingll_1": swingll_1,
         },
         index=high.index,
     )
