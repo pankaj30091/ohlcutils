@@ -2,7 +2,7 @@ import pandas_ta as ta
 import plotly.graph_objects as go
 import plotly.io as pio
 
-pio.renderers.default = "notebook"
+pio.renderers.default = "notebook_connected"
 
 
 def plot(

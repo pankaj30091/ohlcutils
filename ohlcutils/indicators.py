@@ -452,7 +452,7 @@ def shift(source: np.array, signal: np.array, ref: int):
     return out
 
 
-def trend(md, bars=1, columns: dict = {"high": "ahigh", "low": "low"}) -> pd.DataFrame:
+def trend(md, bars=1, columns: dict = {"high": "ahigh", "low": "alow"}) -> pd.DataFrame:
     """
     Calculate the trend and swing levels for a given OHLC (Open-High-Low-Close) dataset.
     This function identifies trends, swing highs, swing lows, and other related metrics

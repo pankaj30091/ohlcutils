@@ -27,22 +27,31 @@ def get_dynamic_config():
 
 # Load configuration
 datapath = get_dynamic_config().get("folders").get("basefolder")
-splits = readRDS(
-    os.path.join(
-        datapath,
-        get_dynamic_config().get("folders").get("static_data"),
-        get_dynamic_config().get("files").get("splits"),
+splits = pd.DataFrame(columns=["date", "symbol", "oldshares", "newshares", "purpose"])
+symbolchange = pd.DataFrame(columns=["oldsymbol", "newsymbol", "effectivedate"])
+try:
+    splits = readRDS(
+        os.path.join(
+            datapath,
+            get_dynamic_config().get("folders").get("static_data"),
+            get_dynamic_config().get("files").get("splits"),
+        )
     )
-)
-splits["date"] = pd.to_datetime(splits.date).dt.strftime("%Y-%m-%d")
-symbolchange = readRDS(
-    os.path.join(
-        datapath,
-        get_dynamic_config().get("folders").get("static_data"),
-        get_dynamic_config().get("files").get("symbolchange"),
+    splits["date"] = pd.to_datetime(splits.date).dt.strftime("%Y-%m-%d")
+except Exception as e:
+    warnings.warn(f"Failed to read splits data: {e}", RuntimeWarning)
+
+try:
+    symbolchange = readRDS(
+        os.path.join(
+            datapath,
+            get_dynamic_config().get("folders").get("static_data"),
+            get_dynamic_config().get("files").get("symbolchange"),
+        )
     )
-)
-symbolchange["effectivedate"] = pd.to_datetime(symbolchange.effectivedate).dt.strftime("%Y-%m-%d")
+    symbolchange["effectivedate"] = pd.to_datetime(symbolchange.effectivedate).dt.strftime("%Y-%m-%d")
+except Exception as e:
+    warnings.warn(f"Failed to read symbol change data: {e}", RuntimeWarning)
 
 types_supported = ("STK", "IND", "FUT", "OPT")
 types_deriv = ("FUT", "OPT")
