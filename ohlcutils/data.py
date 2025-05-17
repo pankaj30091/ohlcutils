@@ -556,15 +556,16 @@ def change_timeframe(
         business_days = pd.offsets.CustomBusinessDay(holidays=holidays.get(exchange, []))
 
         # Generate snapshot dates with exactly `period_length` business days between them
-        snapshot_dates = pd.date_range(start=md.index[0], end=md.index[-1], freq=business_days * period_length)
-
-        # Ensure the last day in md.index is included in the snapshot dates
-        if md.index[-1] not in snapshot_dates:
-            snapshot_dates = snapshot_dates.append(pd.DatetimeIndex([md.index[-1]]))
-
-        # Ensure the interval includes the next day after md.index[-1]
-        if dest_bar_size == "1D":
-            snapshot_dates = snapshot_dates.append(pd.DatetimeIndex([md.index[-1] + pd.Timedelta(days=1)]))
+        snapshot_dates = pd.date_range(
+            end=md.index[0],
+            start=md.index[-1] + dt.timedelta(days=1),
+            freq=-1 * business_days * period_length,
+            inclusive="left",
+        )
+        # Ensure the first day in md.index is included in the snapshot dates
+        if md.index[0] not in snapshot_dates:
+            snapshot_dates = snapshot_dates.append(pd.DatetimeIndex([md.index[0]]))
+        snapshot_dates = snapshot_dates[::-1]  # reverse dates so that earliest is first
 
         snapshot_dates = pd.to_datetime(snapshot_dates)
         snapshot_dates = snapshot_dates.sort_values()
@@ -580,10 +581,11 @@ def change_timeframe(
 
         # Assign a representative timestamp to each interval based on the label
         if not aggregated.empty and aggregated.index is not None:  # Ensure the DataFrame is not empty and has an index
+            business_day_offset = pd.offsets.CustomBusinessDay(holidays=holidays.get(exchange, []))
             if label == "left":
                 aggregated.index = [interval.left for interval in aggregated.index]
             elif label == "right":
-                aggregated.index = [interval.right for interval in aggregated.index]
+                aggregated.index = [interval.right - business_day_offset for interval in aggregated.index]
             else:
                 raise ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'.")
             aggregated.index.name = "date"  # Safely assign the name to the index
