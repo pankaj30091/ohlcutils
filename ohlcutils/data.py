@@ -10,8 +10,7 @@ import pandas as pd
 import pytz
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from chameli.dateutils import (advance_by_biz_days, holidays, is_business_day,
-                               market_timings, valid_datetime)
+from chameli.dateutils import advance_by_biz_days, holidays, is_business_day, market_timings, valid_datetime
 from chameli.interactions import readRDS
 
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
@@ -27,31 +26,22 @@ def get_dynamic_config():
 
 # Load configuration
 datapath = get_dynamic_config().get("folders").get("basefolder")
-splits = pd.DataFrame(columns=["date", "symbol", "oldshares", "newshares", "purpose"])
-symbolchange = pd.DataFrame(columns=["oldsymbol", "newsymbol", "effectivedate"])
-try:
-    splits = readRDS(
-        os.path.join(
-            datapath,
-            get_dynamic_config().get("folders").get("static_data"),
-            get_dynamic_config().get("files").get("splits"),
-        )
+splits = readRDS(
+    os.path.join(
+        datapath,
+        get_dynamic_config().get("folders").get("static_data"),
+        get_dynamic_config().get("files").get("splits"),
     )
-    splits["date"] = pd.to_datetime(splits.date).dt.strftime("%Y-%m-%d")
-except Exception as e:
-    warnings.warn(f"Failed to read splits data: {e}", RuntimeWarning)
-
-try:
-    symbolchange = readRDS(
-        os.path.join(
-            datapath,
-            get_dynamic_config().get("folders").get("static_data"),
-            get_dynamic_config().get("files").get("symbolchange"),
-        )
+)
+splits["date"] = pd.to_datetime(splits.date).dt.strftime("%Y-%m-%d")
+symbolchange = readRDS(
+    os.path.join(
+        datapath,
+        get_dynamic_config().get("folders").get("static_data"),
+        get_dynamic_config().get("files").get("symbolchange"),
     )
-    symbolchange["effectivedate"] = pd.to_datetime(symbolchange.effectivedate).dt.strftime("%Y-%m-%d")
-except Exception as e:
-    warnings.warn(f"Failed to read symbol change data: {e}", RuntimeWarning)
+)
+symbolchange["effectivedate"] = pd.to_datetime(symbolchange.effectivedate).dt.strftime("%Y-%m-%d")
 
 types_supported = ("STK", "IND", "FUT", "OPT")
 types_deriv = ("FUT", "OPT")

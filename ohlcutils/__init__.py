@@ -117,7 +117,7 @@ class LazyModule:
         allowed_modules = [
             "ohlcutils.data",
             "ohlcutils.indicators",
-            "ohlcutils.enums",
+            "ohlcutils.charting",
         ]
         if self.module_name not in allowed_modules:
             raise ImportError(f"Module {self.module_name} is not allowed.")
@@ -134,12 +134,10 @@ class LazyModule:
 # Lazy loading for modules
 dateutils = LazyModule("ohlcutils.data")
 europeanoptions = LazyModule("ohlcutils.indicators")
-interactions = LazyModule("ohlcutils.enums")
+interactions = LazyModule("ohlcutils.charting")
 
 __all__ = [
     "data",
     "indicators",
-    "enums",
-    "initialize_config",
-    "configure_logging",
+    "charting",
 ]
