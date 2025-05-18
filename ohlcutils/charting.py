@@ -19,6 +19,7 @@ def plot(
     max_x_labels=10,
     pane_titles=None,
     max_yaxes_per_pane=4,
+    pane_heights=None,  # New parameter to define pane heights
 ):
     """
     Multi-pane candlestick and indicator plot using Plotly, supporting up to 4 y-axes per pane.
@@ -26,9 +27,17 @@ def plot(
     - indicator_columns: Dict {df_idx: [ { "column": col, "yaxis": "y2" }, ... ] }
        (e.g. {1: [{"column": "trend", "yaxis": "y2"}]})
     - pane_indicators: indicators can specify "yaxis": "y2", "y3", ...
+    - pane_heights: List of relative heights for each pane (e.g., [0.6, 0.2, 0.2]).
     """
     n_panes = max(pane_indicators.keys()) if pane_indicators else 1
-    row_heights = [0.5] + [(0.5 / (n_panes - 1))] * (n_panes - 1) if n_panes > 1 else [1.0]
+
+    # Calculate row heights
+    if pane_heights:
+        if len(pane_heights) != n_panes:
+            raise ValueError(f"pane_heights must have {n_panes} values, one for each pane.")
+        row_heights = pane_heights
+    else:
+        row_heights = [0.5] + [(0.5 / (n_panes - 1))] * (n_panes - 1) if n_panes > 1 else [1.0]
 
     # Create specs with secondary_y enabled for all panes
     specs = [[{"secondary_y": True}] for _ in range(n_panes)]
