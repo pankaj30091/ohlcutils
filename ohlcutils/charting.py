@@ -170,15 +170,75 @@ def plot(
                     if result is None:
                         raise ValueError(f"Indicator '{name}' did not return a result. Check the arguments: {kwargs}")
 
-                    # Handle cases where the result is a DataFrame
+
+                    # Update axis ranges and add traces for each column in the result
                     if isinstance(result, pd.DataFrame):
                         for col in result.columns:
-                            df[f"{column_name}_{col}"] = result[col]
+                            full_column_name = f"{column_name}_{col}"
+                            df[full_column_name] = result[col]
+ 
+                            # Update axis ranges based on data
+                            min_val = df[full_column_name].min()
+                            max_val = df[full_column_name].max()
+                            axis_ranges[pane_num][axis_type] = [
+                                min(axis_ranges[pane_num][axis_type][0], min_val),
+                                max(axis_ranges[pane_num][axis_type][1], max_val),
+                            ]
+
+                            # Add trace for each column
+                            fig.add_trace(
+                                go.Scatter(
+                                    x=df.index,
+                                    y=df[full_column_name],
+                                    name=f"{full_column_name} (Pane {pane_num})",
+                                    mode="lines",
+                                    line=dict(color=yaxis_colors[(axis_idx - 1) % 4]),
+                                ),
+                                row=pane_num,
+                                col=1,
+                                secondary_y=use_secondary_y,
+                            )
+
+                            # Update y-axis dictionary
+                            if logical_yaxis not in yaxes_dict[pane_num]:
+                                yaxes_dict[pane_num][logical_yaxis] = {
+                                    "side": "right" if use_secondary_y else "left",
+                                    "color": yaxis_colors[(axis_idx - 1) % 4],
+                                    "title": full_column_name,
+                                }
                     else:
-                        # If the result is a Series, assign it directly
+                        # Handle single Series result
                         df[column_name] = result
-                else:
-                    raise ValueError(f"Indicator '{name}' not in pandas-ta.")
+                        min_val = df[column_name].min()
+                        max_val = df[column_name].max()
+                        axis_ranges[pane_num][axis_type] = [
+                            min(axis_ranges[pane_num][axis_type][0], min_val),
+                            max(axis_ranges[pane_num][axis_type][1], max_val),
+                        ]
+
+                        # Add trace for the single column
+                        fig.add_trace(
+                            go.Scatter(
+                                x=df.index,
+                                y=df[column_name],
+                                name=column_name if pane_num == 1 else f"{column_name} (Pane {pane_num})",
+                                mode="lines",
+                                line=dict(color=yaxis_colors[(axis_idx - 1) % 4]),
+                            ),
+                            row=pane_num,
+                            col=1,
+                            secondary_y=use_secondary_y,
+                        )
+
+                        # Update y-axis dictionary
+                        if logical_yaxis not in yaxes_dict[pane_num]:
+                            yaxes_dict[pane_num][logical_yaxis] = {
+                                "side": "right" if use_secondary_y else "left",
+                                "color": yaxis_colors[(axis_idx - 1) % 4],
+                                "title": column_name,
+                            }
+     
+
 
                 # Update axis ranges based on data
                 axis_type = "secondary" if use_secondary_y else "primary"
