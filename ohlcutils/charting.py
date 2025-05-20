@@ -148,12 +148,13 @@ def plot(
                 df_idx = indicator.get("df_idx", 0)
                 df = df_list[df_idx]
                 logical_yaxis = indicator.get("yaxis", "y")
-                axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 1
+                axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 0
                 if axis_idx > max_yaxes_per_pane:
                     raise ValueError(f"Max {max_yaxes_per_pane} y-axes per pane supported.")
 
                 # For Plotly with secondary_y, we can only have primary (False) or secondary (True)
                 use_secondary_y = axis_idx > 1
+                axis_type = "secondary" if use_secondary_y else "primary"
 
                 # Calculate indicator
                 if hasattr(ta, name):
@@ -237,38 +238,6 @@ def plot(
                                 "color": yaxis_colors[(axis_idx - 1) % 4],
                                 "title": column_name,
                             }
-     
-
-
-                # Update axis ranges based on data
-                axis_type = "secondary" if use_secondary_y else "primary"
-                min_val = df[column_name].min()
-                max_val = df[column_name].max()
-                axis_ranges[pane_num][axis_type] = [
-                    min(axis_ranges[pane_num][axis_type][0], min_val),
-                    max(axis_ranges[pane_num][axis_type][1], max_val),
-                ]
-
-                # Add trace to appropriate pane
-                fig.add_trace(
-                    go.Scatter(
-                        x=df.index,
-                        y=df[column_name],
-                        name=column_name if pane_num == 1 else f"{column_name} (Pane {pane_num})",
-                        mode="lines",
-                        line=dict(color=yaxis_colors[(axis_idx - 1) % 4]),
-                    ),
-                    row=pane_num,
-                    col=1,
-                    secondary_y=use_secondary_y,
-                )
-
-                if logical_yaxis not in yaxes_dict[pane_num]:
-                    yaxes_dict[pane_num][logical_yaxis] = {
-                        "side": "right" if use_secondary_y else "left",
-                        "color": yaxis_colors[(axis_idx - 1) % 4],
-                        "title": column_name,
-                    }
 
     # --- X-axis labels ---
     x_labels = main_df.index.strftime("%Y-%m-%d %H:%M:%S").tolist()
