@@ -2,6 +2,7 @@ import pandas_ta as ta
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
+import pandas as pd
 from .config import get_config
 
 def get_dynamic_config():
@@ -13,8 +14,8 @@ pio.renderers.default = get_dynamic_config().get("chart_rendering")
 def plot(
     df_list,
     candle_stick_columns={"open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"},
-    indicator_columns=None,  # Dict: {df_idx: [ { "column": col, "yaxis": "y2" }, ... ] }
-    pane_indicators=None,  # Dict: {pane_number: [indicator_dicts]}
+    df_features=None,  # Dict: {df_idx: [ { "column": col, "yaxis": "y2" }, ... ] }
+    ta_indicators=None,  # Dict: {pane_number: [indicator_dicts]}
     title="",
     max_x_labels=10,
     pane_titles=None,
@@ -29,7 +30,7 @@ def plot(
     - pane_indicators: indicators can specify "yaxis": "y2", "y3", ...
     - pane_heights: List of relative heights for each pane (e.g., [0.6, 0.2, 0.2]).
     """
-    n_panes = max(pane_indicators.keys()) if pane_indicators else 1
+    n_panes = max(ta_indicators.keys()) if ta_indicators else 1
 
     # Calculate row heights
     if pane_heights:
@@ -94,8 +95,8 @@ def plot(
     ]
 
     # 2. Overlay indicator columns (main pane) with axis selection
-    if indicator_columns:
-        for dfi, overlays in indicator_columns.items(): # change: dfi should be the pane on which indicators are plotted
+    if df_features:
+        for dfi, overlays in df_features.items(): # change: dfi should be the pane on which indicators are plotted
             df = df_list[dfi]  # identify df from df_list. df should contain column name == overlays["column"] 
             for overlay in overlays:
                 col = overlay["column"] if isinstance(overlay, dict) else overlay
@@ -137,8 +138,8 @@ def plot(
                         }
 
     # 3. Calculate and plot pane indicators (all panes)
-    if pane_indicators:
-        for pane_num, indicators in pane_indicators.items():
+    if ta_indicators:
+        for pane_num, indicators in ta_indicators.items():
             for indicator in indicators:
                 name = indicator.get("name")
                 kwargs = indicator.get("kwargs", {})
@@ -156,7 +157,26 @@ def plot(
 
                 # Calculate indicator
                 if hasattr(ta, name):
-                    df[column_name] = getattr(ta, name)(df[target_column], **kwargs)
+                    ta_function = getattr(ta, name)
+
+                    # Map kwargs values to the corresponding DataFrame columns
+                    mapped_kwargs = {
+                        k: (df[v] if v in df else v) for k, v in kwargs.items()
+                    }
+
+                    # Pass the mapped kwargs to the pandas-ta function
+                    result = ta_function(**mapped_kwargs, append=False)  # Ensure the function returns the result
+
+                    if result is None:
+                        raise ValueError(f"Indicator '{name}' did not return a result. Check the arguments: {kwargs}")
+
+                    # Handle cases where the result is a DataFrame
+                    if isinstance(result, pd.DataFrame):
+                        for col in result.columns:
+                            df[f"{column_name}_{col}"] = result[col]
+                    else:
+                        # If the result is a Series, assign it directly
+                        df[column_name] = result
                 else:
                     raise ValueError(f"Indicator '{name}' not in pandas-ta.")
 
@@ -282,6 +302,7 @@ def plot(
     # Add spikes to all panes
     for i in range(1, n_panes + 1):
         fig.update_xaxes(
+            type="category",
             showspikes=True,
             spikemode="across",
             spikesnap="cursor",
