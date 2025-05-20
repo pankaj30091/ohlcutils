@@ -2,6 +2,7 @@ import pandas_ta as ta
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
+import plotly.colors
 import pandas as pd
 from .config import get_config
 
@@ -124,7 +125,8 @@ def plot(
                             y=df[col],
                             name=f"{col}" if dfi == 0 else f"{col} (df{dfi})",
                             mode="lines",
-                            line=dict(color=yaxis_colors[(axis_idx - 1) % 4]),
+                            line=dict(color=yaxis_colors[(axis_idx - 1) % 4],
+                            dash="dot" if df[col].nunique() / len(df[col]) < 0.5 else "solid",),
                         ),
                         row=1, # question: what is impact of this row?
                         col=1,
@@ -174,7 +176,8 @@ def plot(
 
                     # Update axis ranges and add traces for each column in the result
                     if isinstance(result, pd.DataFrame):
-                        for col in result.columns:
+                        columns_to_plot = indicator.get("columns", result.columns)
+                        for col in columns_to_plot:
                             full_column_name = f"{column_name}_{col}"
                             df[full_column_name] = result[col]
  
@@ -185,6 +188,11 @@ def plot(
                                 min(axis_ranges[pane_num][axis_type][0], min_val),
                                 max(axis_ranges[pane_num][axis_type][1], max_val),
                             ]
+                            
+                            # Define a color palette
+                            color_palette = plotly.colors.qualitative.Plotly  # Use Plotly's default qualitative color palette
+                            color_count = len(color_palette)  # Number of colors in the palette
+                            indicator_color_map = {}  # Map to store assigned colors for each indicator
 
                             # Add trace for each column
                             fig.add_trace(
@@ -193,13 +201,17 @@ def plot(
                                     y=df[full_column_name],
                                     name=f"{full_column_name} (Pane {pane_num})",
                                     mode="lines",
-                                    line=dict(color=yaxis_colors[(axis_idx - 1) % 4]),
+                                    line=dict(
+                                        color=indicator_color_map.setdefault(
+                column_name, color_palette[len(indicator_color_map) % color_count]
+            ),
+                                        dash="dot" if df[full_column_name].nunique() / len(df[full_column_name]) < 0.5 else "solid",
+                                    ),
                                 ),
                                 row=pane_num,
                                 col=1,
                                 secondary_y=use_secondary_y,
                             )
-
                             # Update y-axis dictionary
                             if logical_yaxis not in yaxes_dict[pane_num]:
                                 yaxes_dict[pane_num][logical_yaxis] = {
