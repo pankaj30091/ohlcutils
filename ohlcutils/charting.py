@@ -128,52 +128,59 @@ def plot(
 
     # 2. Overlay indicator columns per pane
     if df_features:
-        # count how many df_list entries are already used by candlesticks
-        total_candle_dicts = sum(len(csticks) for csticks in candle_sticks.values())
         for pane_num, overlays in df_features.items():
             for overlay in overlays:
+                # Extract df_idx and column information
+                df_idx = overlay.get("df_idx", 1)  # Default to the first DataFrame if df_idx is not provided
                 col = overlay["column"] if isinstance(overlay, dict) else overlay
-                # find first df after the candlesticks section that has this column
-                df = next((d for d in df_list[total_candle_dicts:] if col in d.columns), None)
-                if df is None:
-                    raise KeyError(f"Column '{col}' not found in any feature DF after candlesticks.")
                 logical_yaxis = overlay.get("yaxis", "y") if isinstance(overlay, dict) else "y"
+
+                # Validate df_idx
+                if df_idx < 1 or df_idx > len(df_list):
+                    raise ValueError(f"df_idx {df_idx} out of range (1-{len(df_list)})")
+
+                # Select the appropriate DataFrame
+                df = df_list[df_idx - 1]
+                if col not in df.columns:
+                    raise KeyError(f"Column '{col}' not found in DataFrame {df_idx}")
+
+                # Determine y-axis
                 axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 1
                 if axis_idx > max_yaxes_per_pane:
                     raise ValueError(f"Max {max_yaxes_per_pane} y-axes per pane supported.")
-
-                # For Plotly with secondary_y, we can only have primary (False) or secondary (True)
                 use_secondary_y = axis_idx > 1
 
-                if col in df.columns:
-                    # Update axis ranges based on data
-                    axis_type = "secondary" if use_secondary_y else "primary"
-                    min_val = df[col].min()
-                    max_val = df[col].max()
-                    axis_ranges[pane_num][axis_type] = [
-                        min(axis_ranges[pane_num][axis_type][0], min_val),
-                        max(axis_ranges[pane_num][axis_type][1], max_val),
-                    ] 
-
-                    fig.add_trace(
-                        go.Scatter(
-                            x=df.index,
-                            y=df[col],
-                            name=f"{col}" if pane_num == 0 else f"{col} (Pane {pane_num})",
-                            mode="lines",
-                            line=dict(color=yaxis_colors[(axis_idx - 1) % 4],
-                            dash="dot" if df[col].nunique() / len(df[col]) < 0.5 else "solid",),
+                # Add feature trace
+                fig.add_trace(
+                    go.Scatter(
+                        x=df.index,
+                        y=df[col],
+                        name=f"{col} (Pane {pane_num})",
+                        mode="lines",
+                        line=dict(
+                            color=yaxis_colors[(axis_idx - 1) % len(yaxis_colors)],
+                            dash="dot" if df[col].nunique() / len(df[col]) < 0.5 else "solid",
                         ),
-                        row=pane_num,
-                        col=1,
-                        secondary_y=use_secondary_y,
-                    )
-                    if logical_yaxis not in yaxes_dict[pane_num]:
-                        yaxes_dict[pane_num][logical_yaxis] = {
-                            "side": "right" if use_secondary_y else "left",
-                            "color": yaxis_colors[(axis_idx - 1) % 4],
-                            "title": col,
-                        }
+                    ),
+                    row=pane_num,
+                    col=1,
+                    secondary_y=use_secondary_y,
+                )
+
+                # Update axis properties
+                yaxes_dict[pane_num][logical_yaxis] = {
+                    "side": "right" if use_secondary_y else "left",
+                    "color": yaxis_colors[(axis_idx - 1) % len(yaxis_colors)],
+                    "title": col,
+                }
+
+                # Update range
+                key = "secondary" if use_secondary_y else "primary"
+                min_val, max_val = df[col].min(), df[col].max()
+                axis_ranges[pane_num][key] = [
+                    min(axis_ranges[pane_num][key][0], min_val),
+                    max(axis_ranges[pane_num][key][1], max_val),
+                ]
 
     # 3. Calculate and plot pane indicators (all panes)
     if ta_indicators:
@@ -417,6 +424,6 @@ def plot(
                 col=1,
                 secondary_y=True,
             )
-
+    fig.update_xaxes(rangeslider_visible=False)
     fig.show()
 
