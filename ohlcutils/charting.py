@@ -14,7 +14,7 @@ pio.renderers.default = get_dynamic_config().get("chart_rendering")
 
 def plot(
     df_list,
-    candle_stick_columns={"open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"},
+    candle_sticks=None,  # Dict[int, {"df_idx": int, "candle_stick_columns": {...}, "yaxis": "y"}]
     df_features=None,  # Dict: {df_idx: [ { "column": col, "yaxis": "y2" }, ... ] }
     ta_indicators=None,  # Dict: {pane_number: [indicator_dicts]}
     title="",
@@ -31,7 +31,25 @@ def plot(
     - pane_indicators: indicators can specify "yaxis": "y2", "y3", ...
     - pane_heights: List of relative heights for each pane (e.g., [0.6, 0.2, 0.2]).
     """
-    n_panes = max(ta_indicators.keys()) if ta_indicators else 1
+    # determine total panes needed from candle_sticks, df_features, ta_indicators
+    pane_keys = []
+    if candle_sticks:
+        pane_keys.append(max(candle_sticks.keys()))
+    if df_features:
+        pane_keys.append(max(df_features.keys()))
+    if ta_indicators:
+        pane_keys.append(max(ta_indicators.keys()))
+    n_panes = max(pane_keys) if pane_keys else 1
+
+    # backward‐compat: wrap old single‐pane arg into candle_sticks
+    if candle_sticks is None:
+        candle_sticks = {
+            1: {
+                "df_idx": 1,
+                "candle_stick_columns": {"open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"},
+                "yaxis": "y",
+            }
+        }
 
     # Calculate row heights
     if pane_heights:
@@ -57,8 +75,6 @@ def plot(
         ],
     )
 
-    main_df = df_list[0]
-
     # --- Track y-axes per pane ---
     yaxes_dict = {pane: {} for pane in range(1, n_panes + 1)}
     yaxis_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
@@ -69,38 +85,58 @@ def plot(
         for pane in range(1, n_panes + 1)
     }
 
-    # 1. Candlestick in main pane (row=1) - always on y (primary left axis)
-    fig.add_trace(
-        go.Candlestick(
-            x=main_df.index,
-            open=main_df[candle_stick_columns["open"]],
-            high=main_df[candle_stick_columns["high"]],
-            low=main_df[candle_stick_columns["low"]],
-            close=main_df[candle_stick_columns["close"]],
-            name="Candles",
-            increasing_line_color="green",
-            decreasing_line_color="red",
-        ),
-        row=1,
-        col=1,
-        secondary_y=False,
-    )
-    yaxes_dict[1]["y"] = {"side": "left", "color": yaxis_colors[0], "title": "Price"}
+    # 1. Candlesticks per pane
+    for pane_num, csticks in candle_sticks.items():
+        for cs in csticks:
+            df = df_list[cs["df_idx"]-1]
+            cols = cs["candle_stick_columns"]
+            # decide primary vs. secondary based on yaxis key
+            logical_yaxis = cs.get("yaxis", "y")
+            axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 1
+            if axis_idx > max_yaxes_per_pane:
+                raise ValueError(f"Max {max_yaxes_per_pane} y-axes per pane supported.")
+            use_secondary_y = axis_idx > 1
 
-    # Update price range for primary axis in pane 1
-    low_values = main_df[candle_stick_columns["low"]].min()
-    high_values = main_df[candle_stick_columns["high"]].max()
-    axis_ranges[1]["primary"] = [
-        min(axis_ranges[1]["primary"][0], low_values),
-        max(axis_ranges[1]["primary"][1], high_values),
-    ]
+            fig.add_trace(
+                go.Candlestick(
+                    x=df.index,
+                    open=df[cols["open"]],
+                    high=df[cols["high"]],
+                    low=df[cols["low"]],
+                    close=df[cols["close"]],
+                    name=f"Candles (Pane {pane_num})",
+                    increasing_line_color="green",
+                    decreasing_line_color="red",
+                ),
+                row=pane_num,
+                col=1,
+                secondary_y=use_secondary_y,
+            )
+            # track axis properties
+            yaxes_dict[pane_num][logical_yaxis] = {
+                "side": "right" if use_secondary_y else "left",
+                "color": yaxis_colors[(axis_idx - 1) % len(yaxis_colors)],
+                "title": "Price",
+            }
+            # update range on correct axis
+            low_val, high_val = df[cols["low"]].min(), df[cols["high"]].max()
+            key = "secondary" if use_secondary_y else "primary"
+            axis_ranges[pane_num][key] = [
+                min(axis_ranges[pane_num][key][0], low_val),
+                max(axis_ranges[pane_num][key][1], high_val),
+            ]
 
-    # 2. Overlay indicator columns (main pane) with axis selection
+    # 2. Overlay indicator columns per pane
     if df_features:
-        for dfi, overlays in df_features.items(): # change: dfi should be the pane on which indicators are plotted
-            df = df_list[dfi]  # identify df from df_list. df should contain column name == overlays["column"] 
+        # count how many df_list entries are already used by candlesticks
+        total_candle_dicts = sum(len(csticks) for csticks in candle_sticks.values())
+        for pane_num, overlays in df_features.items():
             for overlay in overlays:
                 col = overlay["column"] if isinstance(overlay, dict) else overlay
+                # find first df after the candlesticks section that has this column
+                df = next((d for d in df_list[total_candle_dicts:] if col in d.columns), None)
+                if df is None:
+                    raise KeyError(f"Column '{col}' not found in any feature DF after candlesticks.")
                 logical_yaxis = overlay.get("yaxis", "y") if isinstance(overlay, dict) else "y"
                 axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 1
                 if axis_idx > max_yaxes_per_pane:
@@ -114,26 +150,26 @@ def plot(
                     axis_type = "secondary" if use_secondary_y else "primary"
                     min_val = df[col].min()
                     max_val = df[col].max()
-                    axis_ranges[1][axis_type] = [
-                        min(axis_ranges[1][axis_type][0], min_val),
-                        max(axis_ranges[1][axis_type][1], max_val),
+                    axis_ranges[pane_num][axis_type] = [
+                        min(axis_ranges[pane_num][axis_type][0], min_val),
+                        max(axis_ranges[pane_num][axis_type][1], max_val),
                     ] 
 
                     fig.add_trace(
                         go.Scatter(
                             x=df.index,
                             y=df[col],
-                            name=f"{col}" if dfi == 0 else f"{col} (df{dfi})",
+                            name=f"{col}" if pane_num == 0 else f"{col} (Pane {pane_num})",
                             mode="lines",
                             line=dict(color=yaxis_colors[(axis_idx - 1) % 4],
                             dash="dot" if df[col].nunique() / len(df[col]) < 0.5 else "solid",),
                         ),
-                        row=1, # question: what is impact of this row?
+                        row=pane_num,
                         col=1,
                         secondary_y=use_secondary_y,
                     )
-                    if logical_yaxis not in yaxes_dict[1]:
-                        yaxes_dict[1][logical_yaxis] = {
+                    if logical_yaxis not in yaxes_dict[pane_num]:
+                        yaxes_dict[pane_num][logical_yaxis] = {
                             "side": "right" if use_secondary_y else "left",
                             "color": yaxis_colors[(axis_idx - 1) % 4],
                             "title": col,
@@ -146,9 +182,8 @@ def plot(
                 name = indicator.get("name")
                 kwargs = indicator.get("kwargs", {})
                 column_name = indicator.get("column_name", name)
-                target_column = indicator.get("target_column", candle_stick_columns["close"])
-                df_idx = indicator.get("df_idx", 0)
-                df = df_list[df_idx]
+                df_idx = indicator.get("df_idx", 1)
+                df = df_list[df_idx-1]
                 logical_yaxis = indicator.get("yaxis", "y")
                 axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 0
                 if axis_idx > max_yaxes_per_pane:
@@ -252,15 +287,15 @@ def plot(
                             }
 
     # --- X-axis labels ---
-    x_labels = main_df.index.strftime("%Y-%m-%d %H:%M:%S").tolist()
+    x_labels = df_list[0].index.strftime("%Y-%m-%d %H:%M:%S").tolist()
     x_labels = [label.split(" ")[0] if label.endswith("00:00:00") else label for label in x_labels]
     total_points = len(x_labels)
     step = max(1, total_points // (max_x_labels - 1))
     selected_indices = sorted(set(list(range(0, total_points, step)) + [total_points - 1]))
-    x_tickvals = [main_df.index[i] for i in selected_indices]
+    x_tickvals = [df_list[0].index[i] for i in selected_indices]
     x_ticktext = [x_labels[i] for i in selected_indices]
 
-    symbol = main_df["symbol"].iloc[0] if "symbol" in main_df.columns else ""
+    symbol = df_list[0]["symbol"].iloc[0] if "symbol" in df_list[0].columns else ""
 
     # --- Update axes properties for each pane ---
     for pane in range(1, n_panes + 1):
