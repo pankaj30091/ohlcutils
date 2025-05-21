@@ -15,22 +15,81 @@ pio.renderers.default = get_dynamic_config().get("chart_rendering")
 def plot(
     df_list,
     candle_sticks=None,  # Dict[int, {"df_idx": int, "candle_stick_columns": {...}, "yaxis": "y"}]
-    df_features=None,  # Dict: {df_idx: [ { "column": col, "yaxis": "y2" }, ... ] }
+    df_features=None,  # Dict: {pane_num: [ { "df_idx": int, "column": str, "yaxis": str }, ... ] }
     ta_indicators=None,  # Dict: {pane_number: [indicator_dicts]}
     title="",
     max_x_labels=10,
     pane_titles=None,
-    max_yaxes_per_pane=4,
-    pane_heights=None,  # New parameter to define pane heights
+    pane_heights=None,
 ):
     """
-    Multi-pane candlestick and indicator plot using Plotly, supporting up to 4 y-axes per pane.
+    Multi-pane candlestick and indicator plot using Plotly, supporting up to 2 y-axes per pane.
 
-    - indicator_columns: Dict {df_idx: [ { "column": col, "yaxis": "y2" }, ... ] }
-       (e.g. {1: [{"column": "trend", "yaxis": "y2"}]})
-    - pane_indicators: indicators can specify "yaxis": "y2", "y3", ...
-    - pane_heights: List of relative heights for each pane (e.g., [0.6, 0.2, 0.2]).
+    Parameters:
+    -----------
+    df_list : list of pandas.DataFrame
+        List of DataFrames containing data to plot. Each DataFrame should have a datetime index.
+
+    candle_sticks : dict, optional
+        A dictionary where keys are pane numbers (int) and values are lists of candlestick configurations.
+        Each candlestick configuration is a dictionary with the following keys:
+        - "df_idx" (int): Index of the DataFrame in `df_list` to use for this candlestick (1-based index).
+        - "candle_stick_columns" (dict): A dictionary mapping candlestick components to column names:
+            - "open" (str): Column name for open prices.
+            - "high" (str): Column name for high prices.
+            - "low" (str): Column name for low prices.
+            - "close" (str): Column name for close prices.
+        - "yaxis" (str, optional): Y-axis to use for this candlestick. Default is "y" (primary y-axis).
+
+    df_features : dict, optional
+        A dictionary where keys are pane numbers (int) and values are lists of feature configurations.
+        Each feature configuration is a dictionary with the following keys:
+        - "df_idx" (int, optional): Index of the DataFrame in `df_list` to use for this feature (1-based index).
+          Default is 1.
+        - "column" (str): Column name of the feature to plot.
+        - "yaxis" (str, optional): Y-axis to use for this feature. Default is "y" (primary y-axis).
+
+    ta_indicators : dict, optional
+        A dictionary where keys are pane numbers (int) and values are lists of technical indicator configurations.
+        Each indicator configuration is a dictionary with the following keys:
+        - "name" (str): Name of the technical indicator (e.g., "sma", "rsi", "atr").
+        - "df_idx" (int): Index of the DataFrame in `df_list` to use for this indicator (1-based index).
+        - "kwargs" (dict): Keyword arguments to pass to the indicator function (e.g., {"length": 14, "close": "close"}).
+        - "column_name" (str, optional): Name to use for the resulting column. Default is the indicator name.
+        - "yaxis" (str, optional): Y-axis to use for this indicator. Default is "y" (primary y-axis).
+        - "columns" (list of str, optional): List of specific columns to plot if the indicator returns multiple columns.
+
+    title : str, optional
+        Title of the chart. Default is an empty string.
+
+    max_x_labels : int, optional
+        Maximum number of x-axis labels to display. Default is 10.
+
+    pane_titles : dict, optional
+        A dictionary where keys are pane numbers (int) and values are titles (str) for each pane.
+        Default is None, which assigns generic titles like "Pane 1", "Pane 2", etc.
+
+    max_yaxes_per_pane : int, optional
+        Maximum number of y-axes allowed per pane. Default is 4.
+
+    pane_heights : list of float, optional
+        List of relative heights for each pane. The sum of all heights should equal 1.0.
+        Default is None, which assigns equal heights to all panes.
+
+    Returns:
+    --------
+    None
+        Displays the Plotly chart in the configured renderer.
+
+    Notes:
+    ------
+    - The `df_idx` parameter in `candle_sticks`, `df_features`, and `ta_indicators` is 1-based, meaning the first
+      DataFrame in `df_list` is referenced as `df_idx=1`.
+    - The `yaxis` parameter can be "y" (primary y-axis) or "y2", "y3", etc., for secondary y-axes.
+    - If `pane_heights` is provided, its length must match the number of panes.
+    - The function automatically aligns the indices of all DataFrames in `df_list` to ensure consistent x-axis values.
     """
+
     # determine total panes needed from candle_sticks, df_features, ta_indicators
     pane_keys = []
     if candle_sticks:
@@ -93,8 +152,6 @@ def plot(
             # decide primary vs. secondary based on yaxis key
             logical_yaxis = cs.get("yaxis", "y")
             axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 1
-            if axis_idx > max_yaxes_per_pane:
-                raise ValueError(f"Max {max_yaxes_per_pane} y-axes per pane supported.")
             use_secondary_y = axis_idx > 1
 
             fig.add_trace(
@@ -104,7 +161,7 @@ def plot(
                     high=df[cols["high"]],
                     low=df[cols["low"]],
                     close=df[cols["close"]],
-                    name=f"Candles (Pane {pane_num})",
+                    name=f"{df.symbol.iloc[-1]} (Pane {pane_num})",
                     increasing_line_color="green",
                     decreasing_line_color="red",
                 ),
@@ -146,8 +203,6 @@ def plot(
 
                 # Determine y-axis
                 axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 1
-                if axis_idx > max_yaxes_per_pane:
-                    raise ValueError(f"Max {max_yaxes_per_pane} y-axes per pane supported.")
                 use_secondary_y = axis_idx > 1
 
                 # Add feature trace
@@ -193,9 +248,6 @@ def plot(
                 df = df_list[df_idx-1]
                 logical_yaxis = indicator.get("yaxis", "y")
                 axis_idx = int(logical_yaxis[1:]) if logical_yaxis != "y" else 0
-                if axis_idx > max_yaxes_per_pane:
-                    raise ValueError(f"Max {max_yaxes_per_pane} y-axes per pane supported.")
-
                 # For Plotly with secondary_y, we can only have primary (False) or secondary (True)
                 use_secondary_y = axis_idx > 1
                 axis_type = "secondary" if use_secondary_y else "primary"
