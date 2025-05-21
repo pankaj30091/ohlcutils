@@ -31,3 +31,4 @@ tests/
 setup.cfg
 ohlcutils/testing
 ohlcutils/config_prod.yaml
+ohlcutils/testing.py

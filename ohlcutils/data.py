@@ -10,7 +10,8 @@ import pandas as pd
 import pytz
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from chameli.dateutils import advance_by_biz_days, holidays, is_business_day, market_timings, valid_datetime
+from chameli.dateutils import (advance_by_biz_days, holidays, is_business_day,
+                               market_timings, valid_datetime)
 from chameli.interactions import readRDS
 
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
