@@ -42,6 +42,10 @@ symbolchange = readRDS(
         get_dynamic_config().get("files").get("symbolchange"),
     )
 )
+symbolchange["effectivedate"] = symbolchange["effectivedate"].dt.tz_localize("UTC")
+symbolchange["effectivedate"] = symbolchange["effectivedate"].dt.tz_convert(
+    get_dynamic_config().get("static_timezone", "Asia/Kolkata")
+)
 symbolchange["effectivedate"] = pd.to_datetime(symbolchange.effectivedate).dt.strftime("%Y-%m-%d")
 
 types_supported = ("STK", "IND", "FUT", "OPT")
