@@ -132,7 +132,7 @@ def calculate_ratio_bars(
         close_col (str): Column name for the close prices in the market data DataFrame. Default is "asettle".
 
     Returns:
-        pd.DataFrame: DataFrame containing the ratio-adjusted OHLC prices with columns ["open", "high", "low", "close"].
+        pd.DataFrame: DataFrame containing the ratio-adjusted OHLC prices with columns ["ratio_adj_open", "ratio_adj_high", "ratio_adj_low", "ratio_adj_close","symbol"].
 
     Raises:
         ValueError: If there are no common dates between the market data and the benchmark data.
@@ -193,7 +193,7 @@ def calculate_beta_adjusted_bars(
     low_col (str): Column name for the low prices in the market data DataFrame. Default is "alow".
     close_col (str): Column name for the close prices in the market data DataFrame. Default is "asettle".
     Returns:
-    pd.DataFrame: DataFrame containing the beta-adjusted OHLC prices with columns ["open", "high", "low", "close"].
+    pd.DataFrame: DataFrame containing the beta-adjusted OHLC prices with columns ["beta_adj_open", "beta_adj_high", "beta_adj_low", "beta_adj_close", "residual_log_return", "beta"]
     Raises:
     ValueError: If there are no common dates between the market data and the benchmark data.
     """
@@ -343,6 +343,8 @@ def average_band(
 
     Returns:
         pd.DataFrame: DataFrame with calculated bands, slopes, Bollinger Bands, highest high, lowest low, and displacement.
+        Columns: [Upper_Band,Middle_Band,Lower_Band,Upper_Band_Slope,Middle_Band_Slope,Lower_Band_Slope,
+                  Avg_Band_Slope,BB_Middle,BB_Upper,BB_Lower,Highest_High,Lowest_Low,Shortest,displacement]
     """
     # Ensure the required columns are present in the DataFrame
     required_keys = ["high", "low", "close"]
@@ -504,6 +506,7 @@ def trend(md, bars=1, columns: dict = {"high": "ahigh", "low": "alow"}) -> pd.Da
     """
 
     # Ensure the required columns are present in the DataFrame
+    md = create_index_if_missing(md)
     required_keys = ["high", "low"]
     if not all(key in columns for key in required_keys):
         raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
