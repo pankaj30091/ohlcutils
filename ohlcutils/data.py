@@ -150,6 +150,7 @@ def _split_adjust_market_data(md: pd.DataFrame, src: Periodicity, tz: str) -> pd
     Returns:
         pd.DataFrame: Returns the original DataFrame with an additional column ['splitadjust'].
     """
+    md = create_index_if_missing(md)
     if len(md) == 0:
         md["splitadjust"] = None
     else:
