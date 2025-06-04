@@ -6,6 +6,7 @@ import plotly.io as pio
 from plotly.subplots import make_subplots
 
 from .config import get_config
+from .indicators import create_index_if_missing
 
 
 def get_dynamic_config():
@@ -92,6 +93,8 @@ def plot(
     - If `pane_heights` is provided, its length must match the number of panes.
     - The function automatically aligns the indices of all DataFrames in `df_list` to ensure consistent x-axis values.
     """
+    for i in range(len(df_list)):
+        df_list[i] = create_index_if_missing(df_list[i])
 
     # determine total panes needed from candle_sticks, df_features, ta_indicators
     pane_keys = []
