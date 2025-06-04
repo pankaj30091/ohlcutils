@@ -17,6 +17,7 @@ from chameli.interactions import readRDS
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
 from .config import get_config
 from .enums import Periodicity
+from .indicators import create_index_if_missing
 
 pd.set_option("future.no_silent_downcasting", True)
 
@@ -489,7 +490,7 @@ def change_timeframe(
     # Handle empty DataFrame
     if md.empty:
         return md
-
+    md = create_index_if_missing(md)
     # Validate `dest_bar_size`
     valid_frequencies = ["S", "T", "min", "H", "D", "W", "ME", "Y"]
     if not any(freq in dest_bar_size for freq in valid_frequencies):
