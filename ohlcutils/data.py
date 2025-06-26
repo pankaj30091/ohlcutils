@@ -381,6 +381,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
             target_weekday=params["target_weekday"],
             adjust_for_holidays=params["adjust_for_holidays"],
             adjustment=params["adjustment"],
+            rolling=params["rolling"],
         )
         if not params["stub"]:
             out = out.loc[params["start_time"] : params["end_time"]]
@@ -405,6 +406,7 @@ def change_timeframe(
     target_weekday: str = "Monday",
     adjust_for_holidays: bool = True,
     adjustment="fbd",
+    rolling=False,
 ) -> pd.DataFrame:
     """
     Resample market data to a different timeframe.
@@ -492,6 +494,36 @@ def change_timeframe(
     if md.empty:
         return md
     md = create_index_if_missing(md)
+    # --- rolling logic ---
+    if rolling:
+        if label == "left" and rolling:
+            print("Warning: Rolling bars are not supported with label='left'. Defaulting to label='right'.")
+            label = "right"
+        rolling_days = int(dest_bar_size.replace("D", "")) if "D" in dest_bar_size else 1
+        all_bars = []
+        for offset in range(rolling_days):
+            if offset == 0:
+                df_offset = md
+            else:
+                df_offset = md.iloc[:-offset]
+            bars = change_timeframe(
+                df_offset,
+                dest_bar_size=dest_bar_size,
+                bar_start_time_in_min=bar_start_time_in_min,
+                exchange=exchange,
+                label="right",
+                fill=fill,
+                addl_column_merge_rules=addl_column_merge_rules,
+                target_weekday=target_weekday,
+                adjust_for_holidays=adjust_for_holidays,
+                adjustment=adjustment,
+                rolling=False,  # prevent recursion
+            )
+            all_bars.append(bars)
+        merged = pd.concat(all_bars).sort_index()
+        merged = merged[~merged.index.duplicated(keep="first")]
+        return merged
+
     # Validate `dest_bar_size`
     valid_frequencies = ["S", "T", "min", "H", "D", "W", "ME", "Y"]
     if not any(freq in dest_bar_size for freq in valid_frequencies):

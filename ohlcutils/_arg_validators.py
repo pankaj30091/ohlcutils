@@ -42,6 +42,7 @@ def _valid_load_symbol_kwargs(**kwargs):
         "target_weekday": "Monday",
         "adjust_for_holidays": True,
         "adjustment": "pbd",
+        "rolling": False,
     }
 
     validators = {
@@ -61,6 +62,7 @@ def _valid_load_symbol_kwargs(**kwargs):
         "target_weekday": lambda value: value in [None, "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         "adjust_for_holidays": lambda value: value in valid_boolean,
         "adjustment": lambda value: value in ["fbd", "pbd", None],
+        "rolling": lambda value: value in valid_boolean,
     }
 
     vkwargs = {key: {"Default": defaults[key], "Validator": validators[key]} for key in defaults}
