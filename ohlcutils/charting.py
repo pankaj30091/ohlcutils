@@ -1,3 +1,5 @@
+from typing import Dict
+
 import pandas as pd
 import pandas_ta as ta
 import plotly.colors
@@ -25,7 +27,7 @@ def plot(
     max_x_labels=10,
     pane_titles=None,
     pane_heights=None,
-):
+) -> go.Figure:
     """
     Multi-pane candlestick and indicator plot using Plotly, supporting up to 2 y-axes per pane.
 
@@ -82,8 +84,8 @@ def plot(
 
     Returns:
     --------
-    None
-        Displays the Plotly chart in the configured renderer.
+    go.Figure object
+    Displays the Plotly chart in the configured renderer.
 
     Notes:
     ------
@@ -147,7 +149,7 @@ def plot(
     )
 
     # --- Track y-axes per pane ---
-    yaxes_dict = {pane: {} for pane in range(1, n_panes + 1)}
+    yaxes_dict: Dict[int, Dict[str, dict]] = {pane: {} for pane in range(1, n_panes + 1)}
     yaxis_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
 
     # Track min/max values for each axis to set proper ranges
@@ -297,7 +299,7 @@ def plot(
                                 plotly.colors.qualitative.Plotly
                             )  # Use Plotly's default qualitative color palette
                             color_count = len(color_palette)  # Number of colors in the palette
-                            indicator_color_map = {}  # Map to store assigned colors for each indicator
+                            indicator_color_map: Dict[str, str] = {}  # Map to store assigned colors for each indicator
 
                             # Add trace for each column
                             fig.add_trace(
@@ -493,3 +495,4 @@ def plot(
             )
     fig.update_xaxes(rangeslider_visible=False)
     fig.show()
+    return fig
