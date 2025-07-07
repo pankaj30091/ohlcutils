@@ -46,8 +46,8 @@ def _valid_load_symbol_kwargs(**kwargs):
     }
 
     validators = {
-        "start_time": lambda value: valid_datetime(value),
-        "end_time": lambda value: valid_datetime(value),
+        "start_time": lambda value: valid_datetime(value)[0],
+        "end_time": lambda value: valid_datetime(value)[0],
         "days": lambda value: isinstance(value, (int, float)),
         "src": lambda value: value in Periodicity.__members__.values(),
         "fill": lambda value: value in valid_fills,
