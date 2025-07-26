@@ -595,8 +595,8 @@ def change_timeframe(
 
         # Generate snapshot dates with exactly `period_length` business days between them
         snapshot_dates = pd.date_range(
-            end=md.index[0],
-            start=md.index[-1] + dt.timedelta(days=1),
+            end=md.index[0].normalize(),
+            start=(md.index[-1] + dt.timedelta(days=1)).normalize(),
             freq=-1 * business_days * period_length,
             inclusive="left",
         )

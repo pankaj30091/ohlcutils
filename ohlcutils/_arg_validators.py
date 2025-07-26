@@ -46,8 +46,8 @@ def _valid_load_symbol_kwargs(**kwargs):
     }
 
     validators = {
-        "start_time": lambda value: valid_datetime(value)[0],
-        "end_time": lambda value: valid_datetime(value)[0],
+        "start_time": lambda value: valid_datetime(value, "%Y-%m-%d")[0],
+        "end_time": lambda value: valid_datetime(value, "%Y-%m-%d")[0],
         "days": lambda value: isinstance(value, (int, float)),
         "src": lambda value: value in Periodicity.__members__.values(),
         "fill": lambda value: value in valid_fills,
@@ -128,6 +128,9 @@ def _process_kwargs(kwargs, vkwargs):
         #      then kwarg is valid as far as we can tell, therefore,
         #      go ahead and replace the appropriate value in config:
 
-        config[key] = value
+        if key in ["start_time", "end_time"]:
+            config[key] = valid_datetime(value, "%Y-%m-%d %H:%M:%S")[0]
+        else:
+            config[key] = value
 
     return config
