@@ -9,6 +9,12 @@ import numpy as np
 import pandas as pd
 import pytz
 
+# Import ohlcutils_logger lazily to avoid circular import
+def get_ohlcutils_logger():
+    """Get ohlcutils_logger instance to avoid circular imports."""
+    from . import ohlcutils_logger
+    return ohlcutils_logger
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from chameli.dateutils import (advance_by_biz_days, holidays, is_business_day,
                                market_timings, valid_datetime)
@@ -282,7 +288,11 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
     elif len(paths) == 1:
         try:
             out = readRDS(paths[0])
-        except Exception:
+        except Exception as e:
+            get_ohlcutils_logger().log_error("Failed to read RDS file", e, {
+                "file_path": paths[0],
+                "symbol": symbol
+            })
             return out
     else:
         list_out = []
@@ -291,6 +301,10 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
                 out = readRDS(p)
                 list_out.append(out)
             except Exception as e:
+                get_ohlcutils_logger().log_error("Failed to read RDS file", e, {
+                    "file_path": p,
+                    "symbol": symbol
+                })
                 warnings.warn(f"Failed to read RDS file {p}: {e}", RuntimeWarning)
         if list_out:
             out = pd.concat(list_out, ignore_index=True)
@@ -497,7 +511,11 @@ def change_timeframe(
     # --- rolling logic ---
     if rolling:
         if label == "left" and rolling:
-            print("Warning: Rolling bars are not supported with label='left'. Defaulting to label='right'.")
+            get_ohlcutils_logger().log_warning("Rolling bars are not supported with label='left'. Defaulting to label='right'.", {
+                "original_label": "left",
+                "new_label": "right",
+                "rolling": rolling
+            })
             label = "right"
         rolling_days = int(dest_bar_size.replace("D", "")) if "D" in dest_bar_size else 1
         all_bars = []
@@ -527,16 +545,28 @@ def change_timeframe(
     # Validate `dest_bar_size`
     valid_frequencies = ["S", "T", "min", "H", "D", "W", "ME", "Y"]
     if not any(freq in dest_bar_size for freq in valid_frequencies):
+        get_ohlcutils_logger().log_error(f"Invalid `dest_bar_size`: {dest_bar_size}", ValueError(f"Invalid `dest_bar_size`: {dest_bar_size}"), {
+            "dest_bar_size": dest_bar_size,
+            "valid_frequencies": valid_frequencies
+        })
         raise ValueError(f"Invalid `dest_bar_size`: {dest_bar_size}")
 
     # Validate `label`
     if label not in ["left", "right"]:
+        get_ohlcutils_logger().log_error(f"Invalid `label`: {label}. Must be 'left' or 'right'.", ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'."), {
+            "label": label,
+            "valid_labels": ["left", "right"]
+        })
         raise ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'.")
 
     # Validate `target_weekday`
     if target_weekday:
         weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         if target_weekday not in weekdays:
+            get_ohlcutils_logger().log_error(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name.", ValueError(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name."), {
+                "target_weekday": target_weekday,
+                "valid_weekdays": weekdays
+            })
             raise ValueError(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name.")
 
     # Fetch market timings and timezone for the exchange
@@ -625,6 +655,10 @@ def change_timeframe(
             elif label == "right":
                 aggregated.index = [interval.right - business_day_offset for interval in aggregated.index]
             else:
+                get_ohlcutils_logger().log_error(f"Invalid `label`: {label}. Must be 'left' or 'right'.", ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'."), {
+                    "label": label,
+                    "valid_labels": ["left", "right"]
+                })
                 raise ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'.")
             aggregated.index.name = "date"  # Safely assign the name to the index
 

@@ -6,6 +6,12 @@ from chameli.dateutils import market_timings, valid_datetime
 
 from .enums import Periodicity
 
+# Import ohlcutils_logger lazily to avoid circular import
+def get_ohlcutils_logger():
+    """Get ohlcutils_logger instance to avoid circular imports."""
+    from . import ohlcutils_logger
+    return ohlcutils_logger
+
 # Constants for regex patterns
 DEST_BAR_SIZE_PATTERN = r"\d{1,3}[STHDWMY]"
 BAR_START_TIME_PATTERN = r"\d{1,2}min"
@@ -109,18 +115,34 @@ def _process_kwargs(kwargs, vkwargs):
     #  replace the appropriate value in config:
     for key in kwargs.keys():
         if key not in vkwargs:
+            get_ohlcutils_logger().log_error(f'Unrecognized kwarg="{key}"', KeyError(f'Unrecognized kwarg="{key}"'), {
+                "unrecognized_key": key,
+                "valid_keys": list(vkwargs.keys()),
+                "function": "_process_kwargs"
+            })
             raise KeyError(f'Unrecognized kwarg="{key}"')
         else:
             value = kwargs[key]
             try:
                 valid = vkwargs[key]["Validator"](value)
             except Exception as ex:
+                get_ohlcutils_logger().log_error(f'kwarg "{key}" validator raised exception to value: "{value}"', ex, {
+                    "key": key,
+                    "value": value,
+                    "function": "_process_kwargs"
+                })
                 ex.extra_info = f'kwarg "{key}" validator raised exception to value: "{value}"'
                 raise
             if not valid:
                 import inspect
 
                 v = inspect.getsource(vkwargs[key]["Validator"]).strip()
+                get_ohlcutils_logger().log_error(f'kwarg "{key}" validator returned False for value: "{value}"', TypeError(f'kwarg "{key}" validator returned False for value: "{value}"\n    {v}'), {
+                    "key": key,
+                    "value": value,
+                    "validator_source": v,
+                    "function": "_process_kwargs"
+                })
                 raise TypeError(f'kwarg "{key}" validator returned False for value: "{value}"\n    {v}')
 
         # ---------------------------------------------------------------

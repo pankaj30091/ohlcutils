@@ -6,6 +6,12 @@ import pandas_ta as ta
 from scipy.stats import linregress
 from sklearn.linear_model import LinearRegression
 
+# Import ohlcutils_logger lazily to avoid circular import
+def get_ohlcutils_logger():
+    """Get ohlcutils_logger instance to avoid circular imports."""
+    from . import ohlcutils_logger
+    return ohlcutils_logger
+
 
 def align_dataframes_on_common_dates(dataframes: List[pd.DataFrame]) -> List[pd.DataFrame]:
     """
@@ -21,12 +27,19 @@ def align_dataframes_on_common_dates(dataframes: List[pd.DataFrame]) -> List[pd.
         ValueError: If there are no common dates across all DataFrames.
     """
     if len(dataframes) < 2:
+        get_ohlcutils_logger().log_error("At least two DataFrames are required.", ValueError("At least two DataFrames are required."), {
+            "dataframes_count": len(dataframes)
+        })
         raise ValueError("At least two DataFrames are required.")
 
     for i, df in enumerate(dataframes):
         if "date" in df.columns:
             dataframes[i] = df.set_index("date")
         elif not isinstance(df.index, pd.DatetimeIndex):
+            get_ohlcutils_logger().log_error("Date column or datetime index is required.", ValueError("Date column or datetime index is required."), {
+                "dataframe_index": type(df.index).__name__,
+                "has_date_column": "date" in df.columns
+            })
             raise ValueError("Date column or datetime index is required.")
 
     for i, df in enumerate(dataframes):
@@ -38,6 +51,9 @@ def align_dataframes_on_common_dates(dataframes: List[pd.DataFrame]) -> List[pd.
         common_dates = common_dates.intersection(df.index)
 
     if common_dates.empty:
+        get_ohlcutils_logger().log_error("No common dates across all DataFrames.", ValueError("No common dates across all DataFrames."), {
+            "dataframes_count": len(dataframes)
+        })
         raise ValueError("No common dates across all DataFrames.")
 
     # Align all DataFrames to the common dates
@@ -58,6 +74,10 @@ def create_index_if_missing(md):
     if "date" in md.columns:
         md = md.set_index("date")
     elif not isinstance(md.index, pd.DatetimeIndex):
+        get_ohlcutils_logger().log_error("Date column or datetime index is required.", ValueError("Date column or datetime index is required."), {
+            "dataframe_index": type(md.index).__name__,
+            "has_date_column": "date" in md.columns
+        })
         raise ValueError("Date column or datetime index is required.")
     md = md.sort_index()
     return md
@@ -80,6 +100,12 @@ def calculate_beta(md, md_benchmark, columns: dict = {"close": "asettle"}, windo
     [md, md_benchmark] = align_dataframes_on_common_dates([md, md_benchmark])
     required_keys = ["close"]
     if not all(key in columns for key in required_keys):
+        get_ohlcutils_logger().log_error(f"The `columns` argument must include mappings for {required_keys}.", ValueError(f"The `columns` argument must include mappings for {required_keys}."), {
+            "required_keys": required_keys,
+            "provided_keys": list(columns.keys()),
+            "missing_keys": [key for key in required_keys if key not in columns],
+            "function": "calculate_beta"
+        })
         raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
 
     # Map the columns
@@ -87,6 +113,12 @@ def calculate_beta(md, md_benchmark, columns: dict = {"close": "asettle"}, windo
 
     # Ensure the mapped columns exist in the DataFrame
     if not all(col in md.columns for col in [close_col]):
+        get_ohlcutils_logger().log_error("Mapped columns must exist in the DataFrame.", ValueError("Mapped columns must exist in the DataFrame."), {
+            "required_columns": [close_col],
+            "available_columns": list(md.columns),
+            "missing_columns": [col for col in [close_col] if col not in md.columns],
+            "function": "calculate_beta"
+        })
         raise ValueError("Mapped columns must exist in the DataFrame.")
 
     # Calculate log returns
@@ -140,6 +172,12 @@ def calculate_ratio_bars(
     [md, md_benchmark] = align_dataframes_on_common_dates([md, md_benchmark])
     required_keys = ["open", "high", "low", "close"]
     if not all(key in columns for key in required_keys):
+        get_ohlcutils_logger().log_error(f"The `columns` argument must include mappings for {required_keys}.", ValueError(f"The `columns` argument must include mappings for {required_keys}."), {
+            "required_keys": required_keys,
+            "provided_keys": list(columns.keys()),
+            "missing_keys": [key for key in required_keys if key not in columns],
+            "function": "calculate_ratio_bars"
+        })
         raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
 
     # Map the columns
@@ -150,10 +188,21 @@ def calculate_ratio_bars(
 
     # Ensure the mapped columns exist in the DataFrame
     if not all(col in md.columns for col in [open_col, high_col, low_col, close_col]):
+        get_ohlcutils_logger().log_error("Mapped columns must exist in the DataFrame.", ValueError("Mapped columns must exist in the DataFrame."), {
+            "required_columns": [open_col, high_col, low_col, close_col],
+            "available_columns": list(md.columns),
+            "missing_columns": [col for col in [open_col, high_col, low_col, close_col] if col not in md.columns],
+            "function": "calculate_ratio_bars"
+        })
         raise ValueError("Mapped columns must exist in the DataFrame.")
 
     # Check for zero values in the first open columns to avoid division by zero
     if md.iloc[0][open_col] == 0 or md_benchmark.iloc[0][open_col] == 0:
+        get_ohlcutils_logger().log_error("The first open value in md or md_benchmark is zero, cannot calculate ratio bars.", ValueError("The first open value in md or md_benchmark is zero, cannot calculate ratio bars."), {
+            "md_first_open": md.iloc[0][open_col],
+            "md_benchmark_first_open": md_benchmark.iloc[0][open_col],
+            "function": "calculate_ratio_bars"
+        })
         raise ValueError("The first open value in md or md_benchmark is zero, cannot calculate ratio bars.")
 
     # Calculate the scaling factor to make the ratio of the first open values equal to 100
@@ -200,6 +249,12 @@ def calculate_beta_adjusted_bars(
     [md, md_benchmark] = align_dataframes_on_common_dates([md, md_benchmark])
     required_keys = ["open", "high", "low", "close"]
     if not all(key in columns for key in required_keys):
+        get_ohlcutils_logger().log_error(f"The `columns` argument must include mappings for {required_keys}.", ValueError(f"The `columns` argument must include mappings for {required_keys}."), {
+            "required_keys": required_keys,
+            "provided_keys": list(columns.keys()),
+            "missing_keys": [key for key in required_keys if key not in columns],
+            "function": "calculate_beta_adjusted_bars"
+        })
         raise ValueError(f"The `columns` argument must include mappings for {required_keys}.")
 
     # Map the columns
@@ -210,10 +265,21 @@ def calculate_beta_adjusted_bars(
 
     # Ensure the mapped columns exist in the DataFrame
     if not all(col in md.columns for col in [open_col, high_col, low_col, close_col]):
+        get_ohlcutils_logger().log_error("Mapped columns must exist in the DataFrame.", ValueError("Mapped columns must exist in the DataFrame."), {
+            "required_columns": [open_col, high_col, low_col, close_col],
+            "available_columns": list(md.columns),
+            "missing_columns": [col for col in [open_col, high_col, low_col, close_col] if col not in md.columns],
+            "function": "calculate_beta_adjusted_bars"
+        })
         raise ValueError("Mapped columns must exist in the DataFrame.")
 
     # Check for zero values in the first open columns to avoid division by zero
     if md.iloc[0][open_col] == 0 or md_benchmark.iloc[0][open_col] == 0:
+        get_ohlcutils_logger().log_error("The first open value in md or md_benchmark is zero, cannot calculate ratio bars.", ValueError("The first open value in md or md_benchmark is zero, cannot calculate ratio bars."), {
+            "md_first_open": md.iloc[0][open_col],
+            "md_benchmark_first_open": md_benchmark.iloc[0][open_col],
+            "function": "calculate_beta_adjusted_bars"
+        })
         raise ValueError("The first open value in md or md_benchmark is zero, cannot calculate ratio bars.")
 
     # Compute beta
@@ -294,10 +360,25 @@ def degree_slope(
     """
     md = create_index_if_missing(md)
     if not all(col in md.columns for col in columns):
+        get_ohlcutils_logger().log_error("All specified columns must exist in the DataFrame.", ValueError("All specified columns must exist in the DataFrame."), {
+            "required_columns": columns,
+            "available_columns": list(md.columns),
+            "missing_columns": [col for col in columns if col not in md.columns],
+            "function": "degree_slope"
+        })
         raise ValueError("All specified columns must exist in the DataFrame.")
     if window < 2:
+        get_ohlcutils_logger().log_error("Window size must be at least 2.", ValueError("Window size must be at least 2."), {
+            "window": window,
+            "function": "degree_slope"
+        })
         raise ValueError("Window size must be at least 2.")
     if method not in ["simple", "regression"]:
+        get_ohlcutils_logger().log_error("Method must be either 'simple' or 'regression'.", ValueError("Method must be either 'simple' or 'regression'."), {
+            "method": method,
+            "valid_methods": ["simple", "regression"],
+            "function": "degree_slope"
+        })
         raise ValueError("Method must be either 'simple' or 'regression'.")
 
     result = pd.DataFrame(index=md.index)

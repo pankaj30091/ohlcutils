@@ -10,6 +10,12 @@ from plotly.subplots import make_subplots
 from .config import get_config
 from .indicators import create_index_if_missing
 
+# Import ohlcutils_logger lazily to avoid circular import
+def get_ohlcutils_logger():
+    """Get ohlcutils_logger instance to avoid circular imports."""
+    from . import ohlcutils_logger
+    return ohlcutils_logger
+
 
 def get_dynamic_config():
     return get_config()
@@ -127,6 +133,11 @@ def plot(
     # Calculate row heights
     if pane_heights:
         if len(pane_heights) != n_panes:
+            get_ohlcutils_logger().log_error(f"pane_heights must have {n_panes} values, one for each pane.", ValueError(f"pane_heights must have {n_panes} values, one for each pane."), {
+                "pane_heights_length": len(pane_heights),
+                "n_panes": n_panes,
+                "function": "plot"
+            })
             raise ValueError(f"pane_heights must have {n_panes} values, one for each pane.")
         row_heights = pane_heights
     else:
@@ -208,11 +219,23 @@ def plot(
 
                 # Validate df_idx
                 if df_idx < 1 or df_idx > len(df_list):
+                    get_ohlcutils_logger().log_error(f"df_idx {df_idx} out of range (1-{len(df_list)})", ValueError(f"df_idx {df_idx} out of range (1-{len(df_list)})"), {
+                        "df_idx": df_idx,
+                        "df_list_length": len(df_list),
+                        "valid_range": f"1-{len(df_list)}",
+                        "function": "plot"
+                    })
                     raise ValueError(f"df_idx {df_idx} out of range (1-{len(df_list)})")
 
                 # Select the appropriate DataFrame
                 df = df_list[df_idx - 1]
                 if col not in df.columns:
+                    get_ohlcutils_logger().log_error(f"Column '{col}' not found in DataFrame {df_idx}", KeyError(f"Column '{col}' not found in DataFrame {df_idx}"), {
+                        "column": col,
+                        "df_idx": df_idx,
+                        "available_columns": list(df.columns),
+                        "function": "plot"
+                    })
                     raise KeyError(f"Column '{col}' not found in DataFrame {df_idx}")
 
                 # Determine y-axis
@@ -277,6 +300,11 @@ def plot(
                     result = ta_function(**mapped_kwargs, append=False)  # Ensure the function returns the result
 
                     if result is None:
+                        get_ohlcutils_logger().log_error(f"Indicator '{name}' did not return a result. Check the arguments: {kwargs}", ValueError(f"Indicator '{name}' did not return a result. Check the arguments: {kwargs}"), {
+                            "indicator_name": name,
+                            "kwargs": kwargs,
+                            "function": "plot"
+                        })
                         raise ValueError(f"Indicator '{name}' did not return a result. Check the arguments: {kwargs}")
 
                     # Update axis ranges and add traces for each column in the result
