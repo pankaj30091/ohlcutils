@@ -186,10 +186,86 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
 
     Args:
         symbol (str): Long name of symbol as given by symbology.
-        **kwargs: Optional parameters for loading symbol data.
+        **kwargs: Optional parameters for loading symbol data. Allowed parameters include:
+            
+            start_time (str, optional): Start time for data range in format "YYYY-MM-DD". 
+                Defaults to None (calculated based on end_time and days).
+            
+            end_time (str, optional): End time for data range in format "YYYY-MM-DD". 
+                Defaults to None (current date if start_time is None, otherwise start_time + days).
+            
+            days (int/float, optional): Number of days to load when start_time is not provided. 
+                Defaults to 100.
+            
+            src (Periodicity, optional): Source periodicity for data. 
+                Defaults to Periodicity.DAILY.
+            
+            fill (str, optional): Fill method for missing data. Must be "ffill" or "drop". 
+                Defaults to "ffill".
+            
+            dest_bar_size (str, optional): Destination bar size for timeframe conversion. 
+                Must match pattern \d{1,3}[STHDWMY] (e.g., "1T", "5S", "1H", "1D", "1W", "1M", "1Y"). 
+                Defaults to None.
+            
+            bar_start_time_in_min (str, optional): Bar start time in minutes. 
+                Must match pattern \d{1,2}min (e.g., "1min", "5min", "15min", "30min"). 
+                Defaults to "15min".
+            
+            exchange (str, optional): Exchange name. Defaults to "NSE".
+            
+            market_open_time (str, optional): Market open time in format "HH:MM" or "HH:MM:SS". 
+                Defaults to "09:15".
+            
+            market_close_time (str, optional): Market close time in format "HH:MM" or "HH:MM:SS". 
+                Defaults to "15:30".
+            
+            tz (str, optional): Timezone for data. Defaults to "Asia/Kolkata".
+            
+            label (str, optional): Label position for time aggregation. Must be "left" or "right". 
+                Defaults to "left".
+            
+            stub (bool, optional): Stub parameter for incomplete periods. Defaults to False.
+            
+            target_weekday (str, optional): Target weekday for weekly aggregation. 
+                Must be None, "Monday", "Tuesday", "Wednesday", "Thursday", or "Friday". 
+                Defaults to "Monday".
+            
+            adjust_for_holidays (bool, optional): Whether to adjust for exchange holidays. 
+                Defaults to True.
+            
+            adjustment (str, optional): Adjustment method for holidays. Must be "fbd", "pbd", or None. 
+                Defaults to "pbd".
+            
+            rolling (bool, optional): Whether to use rolling aggregation. Defaults to False.
 
     Returns:
-        pd.DataFrame: DataFrame containing OHLCV values.
+        pd.DataFrame: DataFrame containing OHLCV values with columns:
+            - open, high, low, close, settle: Price data
+            - volume, tradecount, delivered, tradedvalue: Volume and trade data
+            - symbol: Symbol identifier
+            - splitadjust: Split adjustment flag
+            - aopen, ahigh, alow, aclose, asettle, avolume: Adjusted price and volume data
+            - date: Datetime index with timezone Asia/Kolkata
+
+    Raises:
+        KeyError: If unrecognized kwargs are provided.
+        ValueError: If kwargs values don't match expected patterns or types.
+
+    Example:
+        >>> import ohlcutils
+        >>> # Basic usage
+        >>> df = ohlcutils.load_symbol("NIFTY_IND___")
+        >>> 
+        >>> # With custom parameters
+        >>> df = ohlcutils.load_symbol(
+        ...     "NIFTY_IND___",
+        ...     start_time="2024-01-01",
+        ...     end_time="2024-01-31",
+        ...     src=ohlcutils.Periodicity.PERMIN,
+        ...     dest_bar_size="1H",
+        ...     exchange="NSE",
+        ...     fill="ffill"
+        ... )
     """
     out = pd.DataFrame(
         columns=[
@@ -220,7 +296,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
     ).strftime("%H:%M:%S")
 
     # Sanity check - dest_bar_size should be larger than src
-    bar_size = {Periodicity.DAILY.value: "1D", Periodicity.PERMIN.value: "1T", Periodicity.PERSECOND.value: "1S"}.get(
+    bar_size = {Periodicity.DAILY.value: "1D", Periodicity.PERMIN.value: "1min", Periodicity.PERSECOND.value: "1S"}.get(
         params["src"].value, None
     )
 
@@ -228,7 +304,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         return out
 
     if params["dest_bar_size"] is not None:
-        if not any(bs in params["dest_bar_size"] for bs in ["D", "ME", "W", "Y", "T", "S"]):
+        if not any(bs in params["dest_bar_size"] for bs in ["D", "ME", "W", "Y", "min", "S"]):
             return out
 
     # Generate start_time and end_time if not provided
@@ -337,7 +413,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
                 out.loc[:, "volume"] = out.loc[:, "volume"].fillna(0)
                 out = out.ffill().infer_objects(copy=False)  # Explicitly infer object dtypes
             # Exclude rows mapping to holidays.
-            if any(substring in bar_size for substring in ["T", "S"]):
+            if any(substring in bar_size for substring in ["min", "S"]):
                 out = out[out.index.dayofweek < 5]
                 out = out[
                     ~out.index.normalize().isin(pd.to_datetime(holidays[params["exchange"]]).tz_localize(params["tz"]))
@@ -543,7 +619,7 @@ def change_timeframe(
         return merged
 
     # Validate `dest_bar_size`
-    valid_frequencies = ["S", "T", "min", "H", "D", "W", "ME", "Y"]
+    valid_frequencies = ["S", "min", "H", "D", "W", "ME", "Y"]
     if not any(freq in dest_bar_size for freq in valid_frequencies):
         get_ohlcutils_logger().log_error(f"Invalid `dest_bar_size`: {dest_bar_size}", ValueError(f"Invalid `dest_bar_size`: {dest_bar_size}"), {
             "dest_bar_size": dest_bar_size,
@@ -680,7 +756,7 @@ def change_timeframe(
         md.index = md.index.tz_localize(tz)
 
     # Filter out holidays and non-trading hours
-    if any(substring in dest_bar_size for substring in ["T", "min", "H", "S"]):
+    if any(substring in dest_bar_size for substring in ["min", "H", "S"]):
         md = md[md.index.dayofweek < 5]  # Exclude weekends
         md = md[
             ~md.index.normalize().isin(pd.to_datetime(holidays.get(exchange, [])).tz_localize(tz))
