@@ -66,7 +66,7 @@ def get_default_config_path():
 
 
 class OhlcutilsLogger:
-    """Centralized logger for the ohlcutils package with structured logging capabilities."""
+    """Centralized logger for the tradingAPI package with structured logging capabilities."""
     
     def __init__(self, name: str = "ohlcutils"):
         self.logger = logging.getLogger(name)
@@ -83,7 +83,7 @@ class OhlcutilsLogger:
         enable_structured_logging: bool = True,
     ):
         """
-        Configure logging for the ohlcutils package with enhanced features.
+        Configure logging for the Ohlcutils package with enhanced features.
         
         Args:
             level: Logging level (e.g., logging.DEBUG, logging.INFO).
@@ -220,10 +220,10 @@ def configure_logging(
     backup_count: int = 7,
     format_string: str = "%(asctime)s:%(name)s:%(filename)s:%(lineno)s - %(funcName)20s() ] %(levelname)s: %(message)s",
     enable_structured_logging: bool = True,
-    configure_root_logger: bool = True,
+    configure_root_logger: bool = False,
 ):
     """
-    Configure logging for specific modules or all modules in the ohlcutils package.
+    Configure logging for specific modules or all modules in the tradingAPI package.
 
     Args:
         module_names: List of module names to enable logging for. If None, configure logging for all modules.
@@ -253,33 +253,33 @@ def configure_logging(
         root_logger.setLevel(level)
         
         # Clear existing handlers if requested
-    if clear_existing_handlers:
+        if clear_existing_handlers:
             for handler in root_logger.handlers[:]:
                 root_logger.removeHandler(handler)
-
+        
         # Create handlers for root logger
-    handlers = []
+        handlers = []
         # Use StructuredFormatter for better extra field handling
         formatter = StructuredFormatter(format_string)
         
-    if log_file:
+        if log_file:
             # Ensure log directory exists
             log_dir = os.path.dirname(log_file)
             if log_dir and not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
                 
-        file_handler = TimedRotatingFileHandler(log_file, when="midnight", backupCount=backup_count)
-        file_handler.suffix = "%Y%m%d"
-        file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
-        handlers.append(file_handler)
+            file_handler = TimedRotatingFileHandler(log_file, when="midnight", backupCount=backup_count)
+            file_handler.suffix = "%Y%m%d"
+            file_handler.setLevel(level)
+            file_handler.setFormatter(formatter)
+            handlers.append(file_handler)
 
-    if enable_console:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(level)
-        console_handler.setFormatter(formatter)
-        handlers.append(console_handler)
-
+        if enable_console:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(level)
+            console_handler.setFormatter(formatter)
+            handlers.append(console_handler)
+        
         # Add handlers to root logger
         for handler in handlers:
             root_logger.addHandler(handler)
@@ -291,29 +291,17 @@ def configure_logging(
             logger.setLevel(level)
             # Don't add handlers to avoid duplication
 
-
 # Set default logging level to WARNING and log to console by default
-# Don't configure root logger by default to avoid duplicate logs when used with other packages
+# Don't configure root logger by default to avoid duplicate logs
 configure_logging(configure_root_logger=False)
 
-
-def initialize_config(config_file_path: str, force_reload=True):
-    """
-    Initializes the configuration from the specified file.
-
-    Args:
-        config_file_path (str): Path to the configuration file.
-        force_reload (bool): Whether to force reload the configuration.
-
-    Raises:
-        RuntimeError: If the configuration is already loaded
-        and force_reload is False.
-    """
+def initialize_config(config_file_path: str, force_reload: bool = True):
+    """Initialize configuration with enhanced error handling."""
     try:
-    if is_config_loaded() and not force_reload:
-        raise RuntimeError("Configuration is already loaded.")
-    else:
-        load_config(config_file_path)
+        if is_config_loaded() and not force_reload:
+            raise RuntimeError("Configuration is already loaded.")
+        else:
+            load_config(config_file_path)
             ohlcutils_logger.log_info("Configuration initialized successfully", {
                 "config_file": config_file_path,
                 "force_reload": force_reload
@@ -324,11 +312,9 @@ def initialize_config(config_file_path: str, force_reload=True):
             "force_reload": force_reload
         })
         raise
-
-
+    
 # Initialize configuration with the default config path
 initialize_config(get_default_config_path())
-
 
 class LazyModule:
     """
