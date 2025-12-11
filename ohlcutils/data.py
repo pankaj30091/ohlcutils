@@ -9,15 +9,17 @@ import numpy as np
 import pandas as pd
 import pytz
 
+
 # Import ohlcutils_logger lazily to avoid circular import
 def get_ohlcutils_logger():
     """Get ohlcutils_logger instance to avoid circular imports."""
     from . import ohlcutils_logger
+
     return ohlcutils_logger
 
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from chameli.dateutils import (advance_by_biz_days, holidays, is_business_day,
-                               market_timings, valid_datetime)
+from chameli.dateutils import advance_by_biz_days, holidays, is_business_day, market_timings, valid_datetime
 from chameli.interactions import readRDS
 
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
@@ -97,7 +99,7 @@ def get_linked_symbols(short_symbol: str, complete=False) -> pd.DataFrame:
             new_row = {"starttime": "1970-01-01", "endtime": end_time, "symbol": short_symbol}
             out = pd.concat([out, pd.DataFrame([new_row])], ignore_index=True)
             break
-    return out
+    return out if isinstance(out, pd.DataFrame) else pd.DataFrame()
 
 
 def get_split_info(short_symbol: str) -> pd.DataFrame:
@@ -181,61 +183,75 @@ def _split_adjust_market_data(md: pd.DataFrame, src: Periodicity, tz: str) -> pd
     return md
 
 
+def is_good_df(df):
+    if not isinstance(df, pd.DataFrame):
+        return False
+    if df.empty:
+        return False
+    if df.isna().all(axis=None):
+        return False
+    # Remove columns that are all-NA
+    df = df.dropna(axis=1, how="all")
+    if df.empty:
+        return False
+    return True
+
+
 def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
     """Load market data OHLCV from datastore.
 
     Args:
         symbol (str): Long name of symbol as given by symbology.
         **kwargs: Optional parameters for loading symbol data. Allowed parameters include:
-            
-            start_time (str, optional): Start time for data range in format "YYYY-MM-DD". 
+
+            start_time (str, optional): Start time for data range in format "YYYY-MM-DD".
                 Defaults to None (calculated based on end_time and days).
-            
-            end_time (str, optional): End time for data range in format "YYYY-MM-DD". 
+
+            end_time (str, optional): End time for data range in format "YYYY-MM-DD".
                 Defaults to None (current date if start_time is None, otherwise start_time + days).
-            
-            days (int/float, optional): Number of days to load when start_time is not provided. 
+
+            days (int/float, optional): Number of days to load when start_time is not provided.
                 Defaults to 100.
-            
-            src (Periodicity, optional): Source periodicity for data. 
+
+            src (Periodicity, optional): Source periodicity for data.
                 Defaults to Periodicity.DAILY.
-            
-            fill (str, optional): Fill method for missing data. Must be "ffill" or "drop". 
+
+            fill (str, optional): Fill method for missing data. Must be "ffill" or "drop".
                 Defaults to "ffill".
-            
-            dest_bar_size (str, optional): Destination bar size for timeframe conversion. 
-                Must match pattern \d{1,3}[STHDWMY] (e.g., "1T", "5S", "1H", "1D", "1W", "1M", "1Y"). 
+
+            dest_bar_size (str, optional): Destination bar size for timeframe conversion.
+                Must match pattern \d{1,3}[STHDWMY] (e.g., "1T", "5S", "1H", "1D", "1W", "1M", "1Y").
                 Defaults to None.
-            
-            bar_start_time_in_min (str, optional): Bar start time in minutes. 
-                Must match pattern \d{1,2}min (e.g., "1min", "5min", "15min", "30min"). 
+
+            bar_start_time_in_min (str, optional): Bar start time in minutes.
+                Must match pattern \d{1,2}min (e.g., "1min", "5min", "15min", "30min").
                 Defaults to "15min".
-            
+
             exchange (str, optional): Exchange name. Defaults to "NSE".
-            
-            market_open_time (str, optional): Market open time in format "HH:MM" or "HH:MM:SS". 
+
+            market_open_time (str, optional): Market open time in format "HH:MM" or "HH:MM:SS".
                 Defaults to "09:15".
-            
-            market_close_time (str, optional): Market close time in format "HH:MM" or "HH:MM:SS". 
+
+            market_close_time (str, optional): Market close time in format "HH:MM" or "HH:MM:SS".
                 Defaults to "15:30".
-            
+
             tz (str, optional): Timezone for data. Defaults to "Asia/Kolkata".
-            
-            label (str, optional): Label position for time aggregation. Must be "left" or "right". 
+
+            label (str, optional): Label position for time aggregation. Must be "left" or "right".
                 Defaults to "left".
-            
+
             stub (bool, optional): Stub parameter for incomplete periods. Defaults to False.
-            
-            target_weekday (str, optional): Target weekday for weekly aggregation. 
-                Must be None, "Monday", "Tuesday", "Wednesday", "Thursday", or "Friday". 
+
+            target_weekday (str, optional): Target weekday for weekly aggregation.
+                Must be None, "Monday", "Tuesday", "Wednesday", "Thursday", or "Friday".
                 Defaults to "Monday".
-            
-            adjust_for_holidays (bool, optional): Whether to adjust for exchange holidays. 
+
+            adjust_for_holidays (bool, optional): Whether to adjust for exchange holidays.
                 Defaults to True.
-            
-            adjustment (str, optional): Adjustment method for holidays. Must be "fbd", "pbd", or None. 
+
+            adjustment (str, optional): Adjustment method for holidays. Must be "fbd", "pbd", or None.
                 Defaults to "pbd".
-            
+
             rolling (bool, optional): Whether to use rolling aggregation. Defaults to False.
 
     Returns:
@@ -255,7 +271,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         >>> import ohlcutils
         >>> # Basic usage
         >>> df = ohlcutils.load_symbol("NIFTY_IND___")
-        >>> 
+        >>>
         >>> # With custom parameters
         >>> df = ohlcutils.load_symbol(
         ...     "NIFTY_IND___",
@@ -363,31 +379,26 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         return pd.DataFrame()
     elif len(paths) == 1:
         try:
-            out = readRDS(paths[0])
+            out = readRDS(paths[0], parent_request=symbol)
         except Exception as e:
-            get_ohlcutils_logger().log_error("Failed to read RDS file", e, {
-                "file_path": paths[0],
-                "symbol": symbol
-            })
+            get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": paths[0], "symbol": symbol})
             return out
     else:
         list_out = []
         for p in paths:
             try:
-                out = readRDS(p)
+                out = readRDS(p, parent_request=symbol)
                 list_out.append(out)
             except Exception as e:
-                get_ohlcutils_logger().log_error("Failed to read RDS file", e, {
-                    "file_path": p,
-                    "symbol": symbol
-                })
+                get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": p, "symbol": symbol})
                 warnings.warn(f"Failed to read RDS file {p}: {e}", RuntimeWarning)
-        if list_out:
-            out = pd.concat(list_out, ignore_index=True)
+        filtered_list_out = [df.dropna(axis=1, how="all") for df in list_out if is_good_df(df)]
+        if filtered_list_out:
+            out = pd.concat(filtered_list_out, ignore_index=True)
         else:
-            return out
+            out = pd.DataFrame()
 
-    if len(out) > 0:
+    if isinstance(out, pd.DataFrame) and len(out) > 0:
         # Set symbol
         out["symbol"] = symbol
 
@@ -414,17 +425,21 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
                 out = out.ffill().infer_objects(copy=False)  # Explicitly infer object dtypes
             # Exclude rows mapping to holidays.
             if any(substring in bar_size for substring in ["min", "S"]):
-                out = out[out.index.dayofweek < 5]
+                out = out[pd.to_datetime(out.index).dayofweek < 5]
                 out = out[
-                    ~out.index.normalize().isin(pd.to_datetime(holidays[params["exchange"]]).tz_localize(params["tz"]))
+                    ~pd.to_datetime(out.index)
+                    .normalize()
+                    .isin(pd.to_datetime(holidays[params["exchange"]]).tz_localize(params["tz"]))
                 ]  # Exclude rows mapping to holidays.
                 out = out.between_time(
                     params["market_open_time"], market_close_time
                 )  # Exclude time outside trading hours
             elif "D" in bar_size:
-                out = out[out.index.dayofweek < 5]
+                out = out[pd.to_datetime(out.index).dayofweek < 5]
                 out = out[
-                    ~out.index.normalize().isin(pd.to_datetime(holidays[params["exchange"]]).tz_localize(params["tz"]))
+                    ~pd.to_datetime(out.index)
+                    .normalize()
+                    .isin(pd.to_datetime(holidays[params["exchange"]]).tz_localize(params["tz"]))
                 ]  # Exclude rows mapping to holidays.
         elif params["fill"] == "drop":
             out.dropna(thresh=4, inplace=True)  # Drop rows where at least 4 OHLCV values are missing
@@ -587,11 +602,10 @@ def change_timeframe(
     # --- rolling logic ---
     if rolling:
         if label == "left" and rolling:
-            get_ohlcutils_logger().log_warning("Rolling bars are not supported with label='left'. Defaulting to label='right'.", {
-                "original_label": "left",
-                "new_label": "right",
-                "rolling": rolling
-            })
+            get_ohlcutils_logger().log_warning(
+                "Rolling bars are not supported with label='left'. Defaulting to label='right'.",
+                {"original_label": "left", "new_label": "right", "rolling": rolling},
+            )
             label = "right"
         rolling_days = int(dest_bar_size.replace("D", "")) if "D" in dest_bar_size else 1
         all_bars = []
@@ -621,28 +635,31 @@ def change_timeframe(
     # Validate `dest_bar_size`
     valid_frequencies = ["S", "min", "H", "D", "W", "ME", "Y"]
     if not any(freq in dest_bar_size for freq in valid_frequencies):
-        get_ohlcutils_logger().log_error(f"Invalid `dest_bar_size`: {dest_bar_size}", ValueError(f"Invalid `dest_bar_size`: {dest_bar_size}"), {
-            "dest_bar_size": dest_bar_size,
-            "valid_frequencies": valid_frequencies
-        })
+        get_ohlcutils_logger().log_error(
+            f"Invalid `dest_bar_size`: {dest_bar_size}",
+            ValueError(f"Invalid `dest_bar_size`: {dest_bar_size}"),
+            {"dest_bar_size": dest_bar_size, "valid_frequencies": valid_frequencies},
+        )
         raise ValueError(f"Invalid `dest_bar_size`: {dest_bar_size}")
 
     # Validate `label`
     if label not in ["left", "right"]:
-        get_ohlcutils_logger().log_error(f"Invalid `label`: {label}. Must be 'left' or 'right'.", ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'."), {
-            "label": label,
-            "valid_labels": ["left", "right"]
-        })
+        get_ohlcutils_logger().log_error(
+            f"Invalid `label`: {label}. Must be 'left' or 'right'.",
+            ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'."),
+            {"label": label, "valid_labels": ["left", "right"]},
+        )
         raise ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'.")
 
     # Validate `target_weekday`
     if target_weekday:
         weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         if target_weekday not in weekdays:
-            get_ohlcutils_logger().log_error(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name.", ValueError(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name."), {
-                "target_weekday": target_weekday,
-                "valid_weekdays": weekdays
-            })
+            get_ohlcutils_logger().log_error(
+                f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name.",
+                ValueError(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name."),
+                {"target_weekday": target_weekday, "valid_weekdays": weekdays},
+            )
             raise ValueError(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name.")
 
     # Fetch market timings and timezone for the exchange
@@ -731,10 +748,11 @@ def change_timeframe(
             elif label == "right":
                 aggregated.index = [interval.right - business_day_offset for interval in aggregated.index]
             else:
-                get_ohlcutils_logger().log_error(f"Invalid `label`: {label}. Must be 'left' or 'right'.", ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'."), {
-                    "label": label,
-                    "valid_labels": ["left", "right"]
-                })
+                get_ohlcutils_logger().log_error(
+                    f"Invalid `label`: {label}. Must be 'left' or 'right'.",
+                    ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'."),
+                    {"label": label, "valid_labels": ["left", "right"]},
+                )
                 raise ValueError(f"Invalid `label`: {label}. Must be 'left' or 'right'.")
             aggregated.index.name = "date"  # Safely assign the name to the index
 
