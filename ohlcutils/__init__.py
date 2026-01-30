@@ -6,7 +6,7 @@ from importlib.resources import files
 from logging.handlers import TimedRotatingFileHandler
 from typing import Optional, List
 
-__version__ = "0.1.11"
+__version__ = "0.1.13"
 
 from .config import is_config_loaded, load_config
 
