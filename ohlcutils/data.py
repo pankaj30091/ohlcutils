@@ -379,15 +379,15 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         return pd.DataFrame()
     elif len(paths) == 1:
         try:
-            out = readRDS(paths[0], parent_request=symbol)
+            out = readRDS(paths[0])
         except Exception as e:
             get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": paths[0], "symbol": symbol})
-            return out
+            return pd.DataFrame()
     else:
         list_out = []
         for p in paths:
             try:
-                out = readRDS(p, parent_request=symbol)
+                out = readRDS(p)
                 list_out.append(out)
             except Exception as e:
                 get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": p, "symbol": symbol})
