@@ -6,11 +6,44 @@ import yaml
 # Singleton instance to ensure configuration is loaded once
 _config_instance = None
 
-# Import ohlcutils_logger lazily to avoid circular import
+# Create a minimal logger class to avoid circular import
+import logging
+
+class ConfigLogger:
+    """Minimal logger for config module to avoid circular imports."""
+
+    def __init__(self):
+        self.logger = logging.getLogger("ohlcutils.config")
+        self.logger.setLevel(logging.WARNING)
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s')
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+
+    def log_info(self, message, context=None):
+        """Log info message."""
+        extra = context or {}
+        self.logger.info(message, extra=extra)
+
+    def log_warning(self, message, context=None):
+        """Log warning message."""
+        extra = context or {}
+        self.logger.warning(message, extra=extra)
+
+    def log_error(self, message, error=None, context=None, exc_info=True):
+        """Log error message."""
+        extra = context or {}
+        if error:
+            extra["error_type"] = type(error).__name__
+            extra["error_message"] = str(error)
+        self.logger.error(message, extra=extra, exc_info=exc_info)
+
+_logger_instance = ConfigLogger()
+
 def get_ohlcutils_logger():
-    """Get ohlcutils_logger instance to avoid circular imports."""
-    from . import ohlcutils_logger
-    return ohlcutils_logger
+    """Get logger instance for config module."""
+    return _logger_instance
 
 
 class Config:

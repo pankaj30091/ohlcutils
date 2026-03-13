@@ -4,6 +4,7 @@ import datetime as dt
 import os
 import sys
 import warnings
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -13,13 +14,16 @@ import pytz
 # Import ohlcutils_logger lazily to avoid circular import
 def get_ohlcutils_logger():
     """Get ohlcutils_logger instance to avoid circular imports."""
-    from . import ohlcutils_logger
-
-    return ohlcutils_logger
+    try:
+        from . import ohlcutils_logger
+        return ohlcutils_logger
+    except ImportError:
+        from .config import get_ohlcutils_logger as _get_logger
+        return _get_logger()
 
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from chameli.dateutils import advance_by_biz_days, holidays, is_business_day, market_timings, valid_datetime
+from chameli.dateutils import advance_by_biz_days, holidays, is_business_day, market_timings, parse_datetime, get_aware_dt
 from chameli.interactions import readRDS
 
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
@@ -220,11 +224,11 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
                 Defaults to "ffill".
 
             dest_bar_size (str, optional): Destination bar size for timeframe conversion.
-                Must match pattern \d{1,3}[STHDWMY] (e.g., "1T", "5S", "1H", "1D", "1W", "1M", "1Y").
+                Must match pattern ``\\d{1,3}[STHDWMY]`` (e.g., "1T", "5S", "1H", "1D", "1W", "1M", "1Y").
                 Defaults to None.
 
             bar_start_time_in_min (str, optional): Bar start time in minutes.
-                Must match pattern \d{1,2}min (e.g., "1min", "5min", "15min", "30min").
+                Must match pattern ``\\d{1,2}min`` (e.g., "1min", "5min", "15min", "30min").
                 Defaults to "15min".
 
             exchange (str, optional): Exchange name. Defaults to "NSE".
@@ -303,7 +307,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
             "asettle",
             "avolume",
         ],
-        index=pd.DatetimeIndex([], dtype="datetime64[ns, Asia/Kolkata]", name="date", freq=None),
+        index=pd.DatetimeIndex([], dtype="datetime64[ns, Asia/Kolkata]", name="date"),
     )
 
     params = _process_kwargs(kwargs, _valid_load_symbol_kwargs())
@@ -326,20 +330,21 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
     # Generate start_time and end_time if not provided
     if params["end_time"] is None:
         params["end_time"] = (
-            dt.datetime.now().strftime("%Y-%m-%d")
+            dt.datetime.now()
             if params["start_time"] is None
-            else (valid_datetime(params["start_time"]) + dt.timedelta(days=int(params["days"]))).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            else parse_datetime(params["start_time"]) + dt.timedelta(days=int(params["days"]))
         )
+    else:
+        params["end_time"] = parse_datetime(params["end_time"])
 
     if params["start_time"] is None:
-        params["start_time"] = (
-            dt.datetime.strptime(params["end_time"][0:10], "%Y-%m-%d") - dt.timedelta(days=params["days"])
-        ).strftime("%Y-%m-%d")
+        params["start_time"] = parse_datetime(params["end_time"]) - dt.timedelta(days=params["days"])
+    else:
+        params["start_time"] = parse_datetime(params["start_time"])
 
-    params["start_time"] = valid_datetime(params["start_time"], "%Y-%m-%d %H:%M:%S")[0]
-    params["end_time"] = valid_datetime(params["end_time"], "%Y-%m-%d %H:%M:%S")[0]
+    # Ensure start_time and end_time are timezone-aware
+    params["start_time"] = get_aware_dt(params["start_time"], tz=params["tz"])
+    params["end_time"] = get_aware_dt(params["end_time"], tz=params["tz"])
 
     # Generate paths to rds file
     split_info = get_linked_symbols(symbol.split("_", 5)[0])
@@ -348,13 +353,13 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
     if params["src"].value != Periodicity.DAILY.value:
         custom_calendar = pd.tseries.offsets.CustomBusinessDay(holidays=exchange_holidays)
         business_days = pd.date_range(
-            dt.date.fromisoformat(params["start_time"][0:10]),
-            dt.date.fromisoformat(params["end_time"][0:10]),
+            params["start_time"].date(),
+            params["end_time"].date(),
             freq=custom_calendar,
         )
         for i in range(len(split_info)):
             bdays = np.where(
-                (business_days >= split_info["starttime"][i]) & (business_days <= split_info["endtime"][i])
+                (business_days >= pd.Timestamp(parse_datetime(split_info["starttime"][i]))) & (business_days <= pd.Timestamp(parse_datetime(split_info["endtime"][i])))
             )
             bdays = business_days[bdays]
             symbol_temp = symbol.split("_", -1)
@@ -368,7 +373,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
             )
     else:
         for i in range(len(split_info)):
-            if params["start_time"] <= split_info["endtime"][i] and params["end_time"] >= split_info["starttime"][i]:
+            if params["start_time"] <= get_aware_dt(parse_datetime(split_info["endtime"][i]), tz=params["tz"]) and params["end_time"] >= get_aware_dt(parse_datetime(split_info["starttime"][i]), tz=params["tz"]):
                 symbol_temp = symbol.split("_", -1)
                 symbol_temp[0] = split_info["symbol"][i]
                 symbol_temp_str = "_".join(symbol_temp)
@@ -398,7 +403,10 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         else:
             out = pd.DataFrame()
 
-    if isinstance(out, pd.DataFrame) and len(out) > 0:
+    if not isinstance(out, pd.DataFrame):
+        return pd.DataFrame()
+
+    if len(out) > 0:
         # Set symbol
         out["symbol"] = symbol
 
@@ -410,7 +418,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
 
         # Set index
         out["date"] = pd.to_datetime(out["date"])
-        out["date"] = out["date"].dt.tz_localize("UTC").dt.tz_convert("Asia/Kolkata")
+        out["date"] = out["date"].dt.tz_localize("UTC").dt.tz_convert(params["tz"])
 
         # date_aware_local = [pytz.utc.localize(d).astimezone(params["tz"]) for d in out.loc[:, "date"]]
         # out.loc[:, "date"] = pd.DatetimeIndex(date_aware_local).tz_localize(None)
@@ -422,7 +430,12 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
             if bar_size is not None:
                 out = out.resample(bar_size, label="left").asfreq()
                 out.loc[:, "volume"] = out.loc[:, "volume"].fillna(0)
+                # Store symbol column type before infer_objects
+                symbol_dtype = out["symbol"].dtype
                 out = out.ffill().infer_objects(copy=False)  # Explicitly infer object dtypes
+                # Restore symbol column as string type
+                if "symbol" in out.columns:
+                    out["symbol"] = out["symbol"].astype(str)
             # Exclude rows mapping to holidays.
             if any(substring in bar_size for substring in ["min", "S"]):
                 out = out[pd.to_datetime(out.index).dayofweek < 5]
@@ -491,7 +504,7 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         if not params["stub"]:
             out = out.loc[params["start_time"] : params["end_time"]]
         elif params["label"] == "right":
-            end_time_index = pd.Timestamp(valid_datetime(params["end_time"]), tz="Asia/Kolkata")
+            end_time_index = get_aware_dt(params["end_time"])
             if out.index[-1] > end_time_index:
                 as_list = out.index.tolist()
                 as_list[-1] = end_time_index
@@ -505,7 +518,7 @@ def change_timeframe(
     dest_bar_size: str,
     bar_start_time_in_min: str = "15min",
     exchange: str = "NSE",
-    label: str = "left",
+    label: "Literal['left', 'right']" = "left",
     fill: str = "ffill",
     addl_column_merge_rules: dict = {},
     target_weekday: str = "Monday",
@@ -674,16 +687,17 @@ def change_timeframe(
 
     # Define aggregation rules for resampling
     agg_columns = {}
-    for column in md:
-        if "open" in column:
+    for column in md.columns:
+        col_name = str(column)
+        if "open" in col_name:
             agg_columns[column] = "first"
-        elif "high" in column:
+        elif "high" in col_name:
             agg_columns[column] = "max"
-        elif "low" in column:
+        elif "low" in col_name:
             agg_columns[column] = "min"
-        elif "settle" in column or "close" in column:
+        elif "settle" in col_name or "close" in col_name:
             agg_columns[column] = "last"
-        elif "volume" in column or "delivered" in column or "tradedvalue" in column:
+        elif "volume" in col_name or "delivered" in col_name or "tradedvalue" in col_name:
             agg_columns[column] = "sum"
         else:
             agg_columns[column] = "first"
@@ -717,15 +731,16 @@ def change_timeframe(
         business_days = pd.offsets.CustomBusinessDay(holidays=holidays.get(exchange, []))
 
         # Generate snapshot dates with exactly `period_length` business days between them
+        md_dt_idx = pd.DatetimeIndex(md.index)
         snapshot_dates = pd.date_range(
-            end=md.index[0].normalize(),
-            start=(md.index[-1] + dt.timedelta(days=1)).normalize(),
+            end=md_dt_idx[0].normalize(),
+            start=(md_dt_idx[-1] + dt.timedelta(days=1)).normalize(),
             freq=-1 * business_days * period_length,
             inclusive="left",
         )
         # Ensure the first day in md.index is included in the snapshot dates
-        if md.index[0] not in snapshot_dates:
-            snapshot_dates = snapshot_dates.append(pd.DatetimeIndex([md.index[0]]))
+        if md_dt_idx[0] not in snapshot_dates:
+            snapshot_dates = snapshot_dates.append(pd.DatetimeIndex([md_dt_idx[0]]))
         snapshot_dates = snapshot_dates[::-1]  # reverse dates so that earliest is first
 
         snapshot_dates = pd.to_datetime(snapshot_dates)
@@ -758,31 +773,39 @@ def change_timeframe(
 
         md = aggregated.copy()
         # Normalize the index to ensure the time part is set to 00:00:00
-        md.index = md.index.normalize()
+        dt_idx = pd.DatetimeIndex(md.index)
+        md.index = dt_idx.normalize()
 
     else:
         md = (
             md.resample(dest_bar_size, offset=pd.Timedelta(bar_start_time_in_min), label=label).agg(agg_columns).ffill()
         )
 
+    # Ensure we have a proper DatetimeIndex for subsequent operations
+    dt_idx = pd.DatetimeIndex(md.index)
+
     # Normalize the index to ensure the time part is set to 00:00:00
     if any(barsize in dest_bar_size for barsize in ["D", "W", "ME", "Y"]):
-        md.index = md.index.normalize()
+        md.index = dt_idx.normalize()
+        dt_idx = pd.DatetimeIndex(md.index)
 
     # Restore timezone information
-    if md.index.tz is None:
-        md.index = md.index.tz_localize(tz)
+    if dt_idx.tz is None:
+        md.index = dt_idx.tz_localize(tz)
+        dt_idx = pd.DatetimeIndex(md.index)
 
     # Filter out holidays and non-trading hours
     if any(substring in dest_bar_size for substring in ["min", "H", "S"]):
-        md = md[md.index.dayofweek < 5]  # Exclude weekends
+        md = md[dt_idx.dayofweek < 5]  # Exclude weekends
+        dt_idx = pd.DatetimeIndex(md.index)
         md = md[
-            ~md.index.normalize().isin(pd.to_datetime(holidays.get(exchange, [])).tz_localize(tz))
+            ~dt_idx.normalize().isin(pd.to_datetime(holidays.get(exchange, [])).tz_localize(tz))
         ]  # Exclude holidays
         md = md.between_time(market_open_time, market_close_time)  # Exclude non-trading hours
     elif "D" in dest_bar_size:
+        dt_idx = pd.DatetimeIndex(md.index)
         md = md[
-            ~md.index.normalize().isin(pd.to_datetime(holidays.get(exchange, [])).tz_localize(tz))
+            ~dt_idx.normalize().isin(pd.to_datetime(holidays.get(exchange, [])).tz_localize(tz))
         ]  # Exclude holidays
 
     if adjust_for_holidays and any(barsize in dest_bar_size for barsize in ["D", "W", "ME", "Y"]):

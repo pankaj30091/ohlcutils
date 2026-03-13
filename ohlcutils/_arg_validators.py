@@ -2,7 +2,7 @@
 
 import re
 
-from chameli.dateutils import market_timings, valid_datetime
+from chameli.dateutils import market_timings, parse_datetime
 
 from .enums import Periodicity
 
@@ -29,7 +29,7 @@ def _valid_load_symbol_kwargs(**kwargs):
     # Dynamically fetch market timings based on the exchange
     market_open_time = market_timings.get(exchange, {}).get("open_time", "09:15")
     market_close_time = market_timings.get(exchange, {}).get("close_time", "15:30")
-    timezone = market_timings.get("timezone", "Asia/Kolkata")
+    timezone = market_timings.get(exchange, {}).get("timezone", "Asia/Kolkata")
 
     defaults = {
         "start_time": None,
@@ -52,8 +52,8 @@ def _valid_load_symbol_kwargs(**kwargs):
     }
 
     validators = {
-        "start_time": lambda value: valid_datetime(value, "%Y-%m-%d")[0],
-        "end_time": lambda value: valid_datetime(value, "%Y-%m-%d")[0],
+        "start_time": lambda value: parse_datetime(value),
+        "end_time": lambda value: parse_datetime(value),
         "days": lambda value: isinstance(value, (int, float)),
         "src": lambda value: value in Periodicity.__members__.values(),
         "fill": lambda value: value in valid_fills,
@@ -151,7 +151,7 @@ def _process_kwargs(kwargs, vkwargs):
         #      go ahead and replace the appropriate value in config:
 
         if key in ["start_time", "end_time"]:
-            config[key] = valid_datetime(value, "%Y-%m-%d %H:%M:%S")[0]
+            config[key] = parse_datetime(value)
         else:
             config[key] = value
 
