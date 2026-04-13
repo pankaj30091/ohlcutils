@@ -484,9 +484,13 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
         if "delivered" in out.columns:
             out["adelivered"] = out["delivered"] * out["splitadjust"]
 
-    # Convert all columns other than symbol to float
-    cols = out.columns.drop(["symbol"])
-    out[cols] = out[cols].apply(pd.to_numeric, errors="coerce")
+    if len(out) == 0:
+        return out
+
+    # Convert all columns other than symbol to float (empty frames skip the block above and have no symbol column)
+    cols = [c for c in out.columns if c != "symbol"]
+    if cols:
+        out[cols] = out[cols].apply(pd.to_numeric, errors="coerce")
 
     if params["dest_bar_size"] is not None:
         out = change_timeframe(

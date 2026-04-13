@@ -126,11 +126,15 @@ def _process_kwargs(kwargs, vkwargs):
             try:
                 valid = vkwargs[key]["Validator"](value)
             except Exception as ex:
-                get_ohlcutils_logger().log_error(f'kwarg "{key}" validator raised exception to value: "{value}"', ex, {
-                    "key": key,
-                    "value": value,
-                    "function": "_process_kwargs"
-                })
+                get_ohlcutils_logger().log_error(
+                    f'kwarg "{key}" validator raised exception to value: "{value}"',
+                    ex,
+                    {
+                        "key": key,
+                        "value": value,
+                        "function": "_process_kwargs",
+                    },
+                )
                 ex.extra_info = f'kwarg "{key}" validator raised exception to value: "{value}"'
                 raise
             if not valid:
