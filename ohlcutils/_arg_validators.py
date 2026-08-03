@@ -2,7 +2,7 @@
 
 import re
 
-from chameli.dateutils import market_timings, parse_datetime
+from chameli.dateutils import parse_datetime
 
 from .enums import Periodicity
 
@@ -26,11 +26,6 @@ def _valid_load_symbol_kwargs(**kwargs):
     # Use "NSE" as the default exchange if not provided in kwargs
     exchange = kwargs.get("exchange", "NSE")
 
-    # Dynamically fetch market timings based on the exchange
-    market_open_time = market_timings.get(exchange, {}).get("open_time", "09:15")
-    market_close_time = market_timings.get(exchange, {}).get("close_time", "15:30")
-    timezone = market_timings.get(exchange, {}).get("timezone", "Asia/Kolkata")
-
     defaults = {
         "start_time": None,
         "end_time": None,
@@ -40,9 +35,9 @@ def _valid_load_symbol_kwargs(**kwargs):
         "dest_bar_size": None,
         "bar_start_time_in_min": "15min",
         "exchange": exchange,  # Default exchange
-        "market_open_time": market_open_time,
-        "market_close_time": market_close_time,
-        "tz": timezone,
+        "market_open_time": None,
+        "market_close_time": None,
+        "tz": "Asia/Kolkata",
         "label": "left",
         "stub": False,
         "target_weekday": "Monday",
@@ -60,8 +55,8 @@ def _valid_load_symbol_kwargs(**kwargs):
         "dest_bar_size": lambda value: re.match(DEST_BAR_SIZE_PATTERN, value),
         "bar_start_time_in_min": lambda value: re.match(BAR_START_TIME_PATTERN, value),
         "exchange": lambda value: isinstance(value, str),  # Validator for exchange
-        "market_open_time": lambda value: re.match(TIME_PATTERN, value),
-        "market_close_time": lambda value: re.match(TIME_PATTERN, value),
+        "market_open_time": lambda value: value is None or re.fullmatch(TIME_PATTERN, value),
+        "market_close_time": lambda value: value is None or re.fullmatch(TIME_PATTERN, value),
         "tz": lambda value: True,
         "label": lambda value: value in valid_labels,
         "stub": lambda value: value in valid_boolean,

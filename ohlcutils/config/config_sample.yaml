@@ -1,4 +1,15 @@
 static_timezone : Asia/Kolkata
+market_open_time: '09:15:00'
+market_close_time: '15:30:00'
+market_hours:
+  - effective_date: '2026-08-03'
+    exchanges:
+      NSE:
+        CASH: {open_time: '09:15:00', close_time: '15:35:00'}
+        FNO: {open_time: '09:15:00', close_time: '15:40:00'}
+      BSE:
+        CASH: {open_time: '09:15:00', close_time: '15:35:00'}
+        FNO: {open_time: '09:15:00', close_time: '15:40:00'}
 folders:
   basefolder: data # absolute  path needed
   static_data: static # location with reference to basefolder

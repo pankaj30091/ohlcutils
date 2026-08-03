@@ -23,11 +23,11 @@ def get_ohlcutils_logger():
 
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from chameli.dateutils import advance_by_biz_days, holidays, is_business_day, market_timings, parse_datetime, get_aware_dt
+from chameli.dateutils import advance_by_biz_days, holidays, is_business_day, parse_datetime, get_aware_dt
 from chameli.interactions import readRDS
 
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
-from .config import get_config
+from .config import get_config, get_market_close_time, get_market_open_time
 from .enums import Periodicity
 from .indicators import create_index_if_missing
 
@@ -36,6 +36,24 @@ pd.set_option("future.no_silent_downcasting", True)
 
 def get_dynamic_config():
     return get_config()
+
+
+def _market_hours_mask(index, exchange, symbol=None, market_open_time=None, market_close_time=None):
+    sessions = {}
+    mask = []
+    for timestamp in pd.DatetimeIndex(index):
+        session_date = timestamp.date()
+        if session_date not in sessions:
+            open_value = market_open_time or get_market_open_time(
+                exchange=exchange, symbol=symbol, as_of=session_date
+            )
+            close_value = market_close_time or get_market_close_time(
+                exchange=exchange, symbol=symbol, as_of=session_date
+            )
+            sessions[session_date] = (dt.time.fromisoformat(open_value), dt.time.fromisoformat(close_value))
+        open_time, close_time = sessions[session_date]
+        mask.append(open_time <= timestamp.time() < close_time)
+    return mask
 
 
 # Load configuration
@@ -311,10 +329,6 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
     )
 
     params = _process_kwargs(kwargs, _valid_load_symbol_kwargs())
-    market_close_time = (
-        dt.datetime.strptime(params["market_close_time"], "%H:%M:%S") - dt.timedelta(seconds=1)
-    ).strftime("%H:%M:%S")
-
     # Sanity check - dest_bar_size should be larger than src
     bar_size = {Periodicity.DAILY.value: "1D", Periodicity.PERMIN.value: "1min", Periodicity.PERSECOND.value: "1S"}.get(
         params["src"].value, None
@@ -444,9 +458,15 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
                     .normalize()
                     .isin(pd.to_datetime(holidays[params["exchange"]]).tz_localize(params["tz"]))
                 ]  # Exclude rows mapping to holidays.
-                out = out.between_time(
-                    params["market_open_time"], market_close_time
-                )  # Exclude time outside trading hours
+                out = out[
+                    _market_hours_mask(
+                        out.index,
+                        exchange=params["exchange"],
+                        symbol=symbol,
+                        market_open_time=params["market_open_time"],
+                        market_close_time=params["market_close_time"],
+                    )
+                ]  # Exclude time outside trading hours
             elif "D" in bar_size:
                 out = out[pd.to_datetime(out.index).dayofweek < 5]
                 out = out[
@@ -504,6 +524,8 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
             adjust_for_holidays=params["adjust_for_holidays"],
             adjustment=params["adjustment"],
             rolling=params["rolling"],
+            market_open_time=params["market_open_time"],
+            market_close_time=params["market_close_time"],
         )
         if not params["stub"]:
             out = out.loc[params["start_time"] : params["end_time"]]
@@ -529,6 +551,8 @@ def change_timeframe(
     adjust_for_holidays: bool = True,
     adjustment="fbd",
     rolling=False,
+    market_open_time: str | None = None,
+    market_close_time: str | None = None,
 ) -> pd.DataFrame:
     """
     Resample market data to a different timeframe.
@@ -643,6 +667,8 @@ def change_timeframe(
                 adjust_for_holidays=adjust_for_holidays,
                 adjustment=adjustment,
                 rolling=False,  # prevent recursion
+                market_open_time=market_open_time,
+                market_close_time=market_close_time,
             )
             all_bars.append(bars)
         merged = pd.concat(all_bars).sort_index()
@@ -679,15 +705,8 @@ def change_timeframe(
             )
             raise ValueError(f"Invalid `target_weekday`: {target_weekday}. Must be a valid weekday name.")
 
-    # Fetch market timings and timezone for the exchange
-    market_open_time = market_timings.get(exchange, {}).get("open_time", "09:15")
-    market_close_time = market_timings.get(exchange, {}).get("close_time", "15:30")
-    tz = market_timings.get(exchange, {}).get("timezone", "Asia/Kolkata")
-
-    # Adjust market close time to exclude the last second
-    market_close_time = (dt.datetime.strptime(market_close_time, "%H:%M:%S") - dt.timedelta(seconds=1)).strftime(
-        "%H:%M:%S"
-    )
+    tz = get_dynamic_config().get("static_timezone", "Asia/Kolkata")
+    symbol = str(md["symbol"].dropna().iloc[0]) if "symbol" in md and not md["symbol"].dropna().empty else None
 
     # Define aggregation rules for resampling
     agg_columns = {}
@@ -805,7 +824,15 @@ def change_timeframe(
         md = md[
             ~dt_idx.normalize().isin(pd.to_datetime(holidays.get(exchange, [])).tz_localize(tz))
         ]  # Exclude holidays
-        md = md.between_time(market_open_time, market_close_time)  # Exclude non-trading hours
+        md = md[
+            _market_hours_mask(
+                md.index,
+                exchange=exchange,
+                symbol=symbol,
+                market_open_time=market_open_time,
+                market_close_time=market_close_time,
+            )
+        ]  # Exclude non-trading hours
     elif "D" in dest_bar_size:
         dt_idx = pd.DatetimeIndex(md.index)
         md = md[
