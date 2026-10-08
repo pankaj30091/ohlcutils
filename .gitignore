@@ -25,7 +25,6 @@ build/
 docs/
 examples/
 ohlcutils.egg-info/
-tests/
 
 # environment
 setup.cfg

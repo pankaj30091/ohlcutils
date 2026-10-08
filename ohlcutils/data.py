@@ -4,6 +4,7 @@ import datetime as dt
 import os
 import sys
 import warnings
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -28,6 +29,7 @@ from chameli.interactions import readRDS
 
 from ._arg_validators import _process_kwargs, _valid_load_symbol_kwargs
 from .config import get_config, get_market_close_time, get_market_open_time
+from .archive import PersecondDayResolver
 from .enums import Periodicity
 from .indicators import create_index_if_missing
 
@@ -187,9 +189,7 @@ def _split_adjust_market_data(md: pd.DataFrame, src: Periodicity, tz: str) -> pd
         symbol_vector = md.symbol.iloc[0].split("_", -1)
         split_info = get_split_info(symbol_vector[0])
         if not split_info.empty:
-            split_info = split_info.groupby("date", sort=False).apply(
-                lambda x: x.select_dtypes(include=[np.number]).prod()
-            )
+            split_info = split_info.groupby("date", sort=False).prod(numeric_only=True)
             split_info["splitadjust"] = split_info["newshares"] / split_info["oldshares"]
             split_info["splitadjust"] = split_info["splitadjust"].cumprod()
             tz_locale = pytz.timezone(tz)
@@ -393,29 +393,36 @@ def load_symbol(symbol: str, **kwargs) -> pd.DataFrame:
                 symbol_temp_str = "_".join(symbol_temp)
                 paths.extend([_get_data_path(symbol_temp_str, params["src"], params["src"])])
 
-    # Read rds from path
-    if len(paths) == 0:
-        return pd.DataFrame()
-    elif len(paths) == 1:
-        try:
-            out = readRDS(paths[0])
-        except Exception as e:
-            get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": paths[0], "symbol": symbol})
-            return pd.DataFrame()
-    else:
-        list_out = []
-        for p in paths:
-            try:
-                out = readRDS(p)
-                list_out.append(out)
-            except Exception as e:
-                get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": p, "symbol": symbol})
-                warnings.warn(f"Failed to read RDS file {p}: {e}", RuntimeWarning)
-        filtered_list_out = [df.dropna(axis=1, how="all") for df in list_out if is_good_df(df)]
-        if filtered_list_out:
-            out = pd.concat(filtered_list_out, ignore_index=True)
-        else:
+    resolver = None
+    try:
+        if params["src"] == Periodicity.PERSECOND:
+            resolver = PersecondDayResolver(data_root=Path(datapath))
+            paths = [resolver.resolve(p) for p in paths]
+        if len(paths) == 0:
             out = pd.DataFrame()
+        elif len(paths) == 1:
+            try:
+                out = readRDS(paths[0])
+            except Exception as e:
+                get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": paths[0], "symbol": symbol})
+                out = pd.DataFrame()
+        else:
+            list_out = []
+            for p in paths:
+                try:
+                    out = readRDS(p)
+                    list_out.append(out)
+                except Exception as e:
+                    get_ohlcutils_logger().log_error("Failed to read RDS file", e, {"file_path": p, "symbol": symbol})
+                    warnings.warn(f"Failed to read RDS file {p}: {e}", RuntimeWarning)
+            filtered_list_out = [df.dropna(axis=1, how="all") for df in list_out if is_good_df(df)]
+            if filtered_list_out:
+                out = pd.concat(filtered_list_out, ignore_index=True)
+            else:
+                out = pd.DataFrame()
+    finally:
+        if resolver is not None:
+            resolver.cleanup()
 
     if not isinstance(out, pd.DataFrame):
         return pd.DataFrame()
