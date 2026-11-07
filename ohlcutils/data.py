@@ -98,17 +98,29 @@ def get_linked_symbols(short_symbol: str, complete=False) -> pd.DataFrame:
     """
     out = pd.DataFrame()
     end_time = dt.date.today().strftime("%Y-%m-%d")
+    # Several rows can share a symbol (NSE lists e.g. NOVARTIS and NOVARTIND -> EVONILE); take the latest
+    # row (by date, then file order) and stop on repeats so the chain can never loop forever.
     if complete:
+        seen = {short_symbol}
         while True:
             temp = symbolchange.loc[(symbolchange["oldsymbol"] == short_symbol) & (symbolchange["newsymbol"] != "")]
-            if len(temp) == 1:
-                short_symbol = temp["newsymbol"].item()
             if len(temp) == 0:
                 break
+            temp = temp.sort_values("effectivedate", kind="stable").tail(1)
+            if temp["newsymbol"].item() in seen:
+                break
+            short_symbol = temp["newsymbol"].item()
+            seen.add(short_symbol)
 
+    seen = {short_symbol}
     while True:
         temp = symbolchange.loc[(symbolchange["newsymbol"] == short_symbol) & (symbolchange["oldsymbol"] != "")]
+        if len(temp) > 1:
+            temp = temp.sort_values("effectivedate", kind="stable").tail(1)
+        if len(temp) == 1 and temp.iloc[0]["oldsymbol"] in seen:
+            temp = temp.iloc[0:0]
         if len(temp) == 1:
+            seen.add(temp.iloc[0]["oldsymbol"])
             new_row = {
                 "starttime": temp.iloc[0]["effectivedate"],
                 "endtime": end_time,
