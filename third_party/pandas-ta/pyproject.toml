@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pandas-ta"
+version = "0.3.14b0"
+description = "Local pandas-ta 0.3.14b0. Startup uses importlib.metadata. Indicator code is unchanged."
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["pandas"]
+
+[tool.setuptools.packages.find]
+include = ["pandas_ta*"]

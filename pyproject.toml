@@ -22,6 +22,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.packages.find]
+include = ["ohlcutils*"]
+
 [tool.setuptools.package-data]
 "ohlcutils" = ["config/config_sample.yaml"]
 
@@ -36,7 +39,7 @@ authors = [
 ]
 dependencies = [
     "chameli",
-    "pandas-ta==0.3.14b0",
+    "pandas-ta @ file:third_party/pandas-ta",
     "plotly==6.1.0",
     "nbformat==5.10.4",
     ]
